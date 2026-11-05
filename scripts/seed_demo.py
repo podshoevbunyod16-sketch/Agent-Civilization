@@ -210,6 +210,25 @@ def node_headers(node_key: str, secret: str, method: str, path: str, body: bytes
     }
 
 
+async def promote_to_admin(user_id: str) -> None:
+    """Повышает пользователя до админа напрямую в БД.
+
+    Роль намеренно не выдаётся публичным API (иначе это была бы эскалация
+    привилегий). Сид-скрипт — часть локальной инфраструктуры, он пишет в БД.
+    """
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from app.core.config import settings
+
+    engine = create_async_engine(settings.database_url)
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE users SET role = 'admin' WHERE id = :id"), {"id": user_id}
+        )
+    await engine.dispose()
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--api", default="http://127.0.0.1:8000")
@@ -232,8 +251,19 @@ async def main() -> int:
             )
         response.raise_for_status()
         token = response.json()["access_token"]
+        user_id = response.json()["user"]["id"]
         http.headers["Authorization"] = f"Bearer {token}"
-        print(f"✓ аккаунт: {ADMIN_EMAIL} / {ADMIN_PASSWORD}")
+
+        # Демо-аккаунт должен быть админом: роли не выдаются через API, поэтому
+        # сид-скрипт (локальная инфраструктура, а не клиент) повышает роль в БД.
+        await promote_to_admin(user_id)
+        response = await http.post(
+            "/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}
+        )
+        response.raise_for_status()
+        token = response.json()["access_token"]
+        http.headers["Authorization"] = f"Bearer {token}"
+        print(f"✓ аккаунт: {ADMIN_EMAIL} / {ADMIN_PASSWORD} (админ)")
 
         # 2. Агенты + версии
         created = {}
@@ -302,16 +332,25 @@ async def main() -> int:
                 "labels": {"owner": "community", "power": "solar"},
             },
         )
-        if node_response.status_code != 201:
+        if node_response.status_code == 409:
+            # Узел уже зарегистрирован: переиспользуем существующие credentials
+            print("· узел уже зарегистрирован, используем сохранённые credentials")
+            existing_file = ROOT / "var" / "seed-node-credentials.json"
+            if existing_file.exists():
+                saved = json.loads(existing_file.read_text())
+                node_key, secret = saved["node_key"], saved["node_secret"]
+            else:
+                print("! нет var/seed-node-credentials.json — узел нельзя использовать")
+        elif node_response.status_code != 201:
             print(f"! узел не создан: {node_response.text[:200]}")
             return 0
-        node_payload = node_response.json()
-        node = node_payload["node"]
-        credentials = node_payload["credentials"]
-        print(f"✓ узел: {node['name']} ({node['node_key']})")
-
-        node_key = credentials["node_key"]
-        secret = credentials["node_secret"]
+        else:
+            node_payload = node_response.json()
+            node = node_payload["node"]
+            credentials = node_payload["credentials"]
+            node_key = credentials["node_key"]
+            secret = credentials["node_secret"]
+            print(f"✓ узел: {node['name']} ({node['node_key']})")
 
         async def node_call(method: str, path: str, body: dict | None = None):
             raw = json.dumps(body).encode() if body is not None else b""
@@ -380,6 +419,51 @@ async def main() -> int:
                 },
             )
             print(f"✓ задание {slug}: {result.status}")
+
+        # 4b. Экономика: бюджет демо-пользователя (ACU — внутренние единицы).
+        # Источник единиц — казна платформы, поэтому пополнение идёт переводом
+        # из неё (архитектор в сиде — админ). Ключ идемпотентности делает
+        # повторный запуск безопасным.
+        economy = await http.get("/economy/me")
+        economy.raise_for_status()
+        economy_body = economy.json()
+        accounts = await http.get("/economy/accounts")
+        accounts.raise_for_status()
+        treasury = next(
+            (item for item in accounts.json() if item["type"] == "treasury"), None
+        )
+        if treasury is None:
+            print("! казна не найдена: экономика недоступна")
+        elif economy_body["balance_units"] < 50:
+            topup = round(200 - economy_body["balance_units"], 4)
+            transfer = await http.post(
+                "/economy/transfer",
+                json={
+                    "from_account_id": treasury["id"],
+                    "to_account_id": economy_body["account_id"],
+                    "amount_units": topup,
+                    "comment": "Демо-бюджет для заданий с оплатой",
+                    "idempotency_key": f"seed-topup:{economy_body['account_id']}",
+                },
+            )
+            if transfer.status_code == 201:
+                economy_body = (await http.get("/economy/me")).json()
+                print(f"✓ бюджет пополнен на {topup} ACU (итого {economy_body['balance_units']})")
+            else:
+                print(f"! пополнение не выполнено: {transfer.status_code} {transfer.text[:120]}")
+        else:
+            print(f"✓ бюджет участника: {economy_body['balance_units']} ACU")
+
+        rules = await http.get("/economy/rules")
+        rules.raise_for_status()
+        if not rules.json():
+            print("! нет правила наград: создайте его миграцией или через админа")
+        else:
+            rule = rules.json()[0]
+            print(
+                f"✓ правило наград: {rule['name']} "
+                f"({rule['verified_reward_units']} ACU за подтверждённый результат)"
+            )
 
         # 5. Финальный heartbeat и статистика
         stats = (await http.get("/platform/stats")).json()

@@ -830,6 +830,14 @@ async def aggregate_verdict(session: AsyncSession, task: Task) -> TaskVerdict:
             task_id=task.id,
         )
 
+    # Награда за подтверждённый результат (этап 6). Проверка может прийти
+    # как до, так и после расчёта по бюджету, поэтому начисление живёт здесь,
+    # в момент вердикта, и идемпотентно по (agent_id, task_id).
+    if verdict is Verdict.verified:
+        from app.services import economy as economy_service
+
+        await economy_service.grant_reward(session, task, verdict=row)
+
     # Проверенные возможности: обновляем verified_level на основании вердиктов
     await refresh_verified_capabilities(session, task.agent_id)
     logger.debug(

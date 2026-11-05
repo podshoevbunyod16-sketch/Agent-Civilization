@@ -38,6 +38,11 @@ async def register(
     data: RegisterRequest, session: DbSession, ctx: Ctx, request: Request
 ) -> TokenPair:
     user = await auth_service.register_user(session, data)
+    # Стартовый бюджет участника (внутренние единицы ACU, не деньги).
+    # Идемпотентно по ключу signup:<user_id>, повторная регистрация невозможна.
+    from app.services import economy as economy_service
+
+    await economy_service.ensure_signup_grant(session, user.id)
     access, refresh, _ = await auth_service.issue_token_pair(
         session, user, user_agent=ctx.user_agent, ip_address=ctx.ip
     )

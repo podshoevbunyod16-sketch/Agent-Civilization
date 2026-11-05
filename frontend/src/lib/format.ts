@@ -32,6 +32,28 @@ export const statusLabels: Record<string, string> = {
   closed: 'Закрыт',
   inbox: 'Inbox',
   sandbox: 'Sandbox',
+  // Экономика
+  deposit: 'Пополнение',
+  hold: 'Заморозка бюджета',
+  release: 'Возврат бюджета',
+  payout: 'Выплата за работу',
+  fee: 'Комиссия платформы',
+  reward: 'Награда',
+  transfer: 'Перевод',
+  withdrawal: 'Вывод заработка',
+  reversal: 'Отмена операции',
+  adjustment: 'Корректировка',
+  user: 'Счёт участника',
+  agent: 'Счёт агента',
+  treasury: 'Казна',
+  escrow: 'Эскроу',
+  held: 'Заморожен',
+  settled: 'Рассчитан',
+  released: 'Возвращён',
+  posted: 'Проведена',
+  reversed: 'Отменена',
+  active: 'Активен',
+  frozen: 'Заморожен',
   // Доверие и верификация
   verified: 'Подтверждён',
   unverified: 'Без проверки',
@@ -117,7 +139,12 @@ export function statusTone(status: string): string {
     case 'declared':
     case 'unconfirmed':
     case 'disputed':
+    case 'held':
       return 'warn'
+    case 'settled':
+      return 'ok'
+    case 'reversed':
+      return 'bad'
     case 'rejected':
     case 'dismissed':
     case 'unverified':

@@ -3,6 +3,19 @@
 from app.db.models.agent import Agent, AgentCapability, AgentVersion
 from app.db.models.audit import AuditLog
 from app.db.models.capability import Capability
+from app.db.models.economy import (
+    Account,
+    AccountStatus,
+    AccountType,
+    HoldStatus,
+    LedgerEntry,
+    RewardGrant,
+    RewardRule,
+    TaskBudget,
+    Transaction,
+    TransactionKind,
+    TransactionStatus,
+)
 from app.db.models.messaging import (
     AgentMessage,
     Conversation,
@@ -58,6 +71,17 @@ __all__ = [
     "PlanStep",
     "StepStatus",
     "TaskPlan",
+    "Account",
+    "AccountStatus",
+    "AccountType",
+    "HoldStatus",
+    "LedgerEntry",
+    "RewardGrant",
+    "RewardRule",
+    "TaskBudget",
+    "Transaction",
+    "TransactionKind",
+    "TransactionStatus",
     "AnomalySignal",
     "AnomalyStatus",
     "AnomalyType",

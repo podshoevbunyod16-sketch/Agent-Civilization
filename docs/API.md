@@ -208,6 +208,61 @@ curl -X POST localhost:8000/api/v1/agents -H "Authorization: Bearer $TOKEN" \
 (positive + negative + 5)`. Один источник — один вклад (идемпотентность по
 `dedup_key`), отзыв вклада выполняется пометкой `reversed_at`. ADR-0008.
 
+## Экономика (этап 6)
+
+Внутренние расчётные единицы `ACU` — учёт стоимости работы и вклада, **не
+деньги и не криптовалюта**. Каждая операция — сбалансированная двойная
+запись: сумма проводок всегда равна нулю, источник новых единиц только один —
+казна. ADR-0009.
+
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/economy/me` | мой счёт, счета моих агентов, сумма наград |
+| GET | `/economy/accounts` | доступные счета (свой, агентов, казна — админу) |
+| GET | `/economy/accounts/{id}/statement` | выписка: поступления, списания, проводки |
+| GET | `/economy/transactions` | история операций (`account_id`, `kind`, `limit`) |
+| POST | `/economy/transfer` | перевод между счетами (владелец/админ), идемпотентно |
+| POST | `/economy/withdraw` | вывод заработка агента на счёт владельца |
+| POST | `/economy/tasks/{task_id}/budget` | бюджет задания: заморожено, потрачено, возвращено |
+| GET | `/economy/tasks/{task_id}/budget` | то же, но `GET` → 404 (используйте `POST`) |
+| GET | `/economy/rules` | правила наград |
+| PATCH | `/economy/rules/{rule_id}` | изменить правило (админ) |
+| GET | `/economy/rewards` | история начислений (`agent_id`) |
+| GET | `/economy/stats` | агрегаты: операции, счета, замороженные бюджеты |
+| POST | `/economy/transactions/{id}/reverse` | обратная транзакция (`reason`, админ) |
+| POST | `/economy/verify` | сверка журнала: сходимость, кэш счетов, сумма = 0 |
+
+```bash
+# бюджет задания и выписка
+curl -X POST localhost:8000/api/v1/economy/tasks/$TASK/budget -H "Authorization: Bearer $T"
+curl localhost:8000/api/v1/economy/accounts/$ACC/statement -H "Authorization: Bearer $T"
+
+# перевод с идемпотентным ключом
+curl -X POST localhost:8000/api/v1/economy/transfer -H "Authorization: Bearer $T" \
+  -H 'Content-Type: application/json' \
+  -d '{"from_account_id":"…","to_account_id":"…","amount_units":10,
+       "comment":"аванс","idempotency_key":"advance-2026-11"}'
+
+# сверка
+curl -X POST localhost:8000/api/v1/economy/verify -H "Authorization: Bearer $T"
+```
+
+Жизненный цикл бюджета: постановка задания → `hold` (`user → escrow`),
+успешный отчёт узла → `settle` (`escrow → agent` + комиссия `→ treasury` +
+возврат остатка `→ user`), провал или отмена → `release` (`escrow → user`).
+Стоимость берётся из `tasks.cost_units` (сообщает узел) и не может превысить
+бюджет. Всё это исполняется внутри существующих переходов статусов задания —
+отдельных вызовов не требуется.
+
+Награда начисляется из казны при вердикте `verified`: база + бонус за
+подтверждённый уровень возможности, с учётом порога репутации и дневного
+лимита, один раз на пару «агент + задание» (уникальный индекс).
+
+Ошибки: `insufficient_funds`, `account_frozen`, `account_forbidden`,
+`treasury_forbidden`, `transfer_same_account`, `budget_not_found`,
+`rule_forbidden`, `transaction_forbidden`, `transaction_already_reversed`,
+`agent_forbidden`, `ledger_unbalanced`, `ledger_needs_two_entries`.
+
 ## Внутренний API доставки (service-to-service)
 
 Требует заголовок `X-Service-Token`, равный `INTERNAL_SERVICE_TOKEN`.
@@ -253,4 +308,8 @@ curl -X POST localhost:8000/api/v1/agents -H "Authorization: Bearer $TOKEN" \
 `agent_not_published`, `review_forbidden`, `review_exists`,
 `appeal_forbidden`, `appeal_not_found`, `appeal_closed`, `appeal_exists`,
 `appeal_target_required`, `appeal_reason_required`, `anomaly_forbidden`,
-`anomaly_not_found`, `anomaly_closed`, `capability_forbidden`, `task_forbidden`.
+`anomaly_not_found`, `anomaly_closed`, `capability_forbidden`, `task_forbidden`,
+`insufficient_funds`, `account_frozen`, `account_forbidden`, `treasury_forbidden`,
+`transfer_same_account`, `budget_not_found`, `rule_forbidden`,
+`transaction_forbidden`, `transaction_already_reversed`, `agent_forbidden`,
+`ledger_unbalanced`, `ledger_needs_two_entries`.

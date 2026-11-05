@@ -634,6 +634,134 @@ export interface TrustOverview {
   verified_capabilities: number
 }
 
+
+// ── Экономика (этап 6) ─────────────────────────────────────────────────
+export type AccountType = 'user' | 'agent' | 'treasury' | 'escrow'
+export type TransactionKind =
+  | 'deposit'
+  | 'hold'
+  | 'release'
+  | 'payout'
+  | 'fee'
+  | 'reward'
+  | 'transfer'
+  | 'withdrawal'
+  | 'reversal'
+  | 'adjustment'
+
+export interface Account {
+  id: string
+  type: AccountType
+  status: 'active' | 'frozen' | 'closed'
+  owner_id: string | null
+  agent_id: string | null
+  currency: string
+  balance_units: number
+  credit_limit: number
+  label: string
+  created_at: string
+}
+
+export interface LedgerEntry {
+  id: string
+  transaction_id: string
+  amount: number
+  balance_after: number
+  kind: string
+  description: string
+  status: string
+  task_id: string | null
+  agent_id: string | null
+  created_at: string
+}
+
+export interface AccountStatement {
+  account: Account
+  total_in: number
+  total_out: number
+  entries: LedgerEntry[]
+}
+
+export interface Transaction {
+  id: string
+  kind: TransactionKind
+  status: string
+  amount_units: number
+  currency: string
+  description: string
+  task_id: string | null
+  agent_id: string | null
+  idempotency_key: string | null
+  details: Record<string, unknown>
+  posted_at: string | null
+  reversed_at: string | null
+  created_at: string
+}
+
+export interface TransactionWithImpact {
+  transaction: Transaction
+  impact: number
+}
+
+export interface MoneySummary {
+  currency: string
+  account_id: string | null
+  balance_units: number
+  agents: { agent_id: string; name: string; balance_units: number }[]
+  rewards: { count: number; units: number }
+}
+
+export interface TaskBudget {
+  id: string
+  task_id: string
+  budget_units: number
+  spent_units: number
+  fee_units: number
+  released_units: number
+  status: 'held' | 'settled' | 'released'
+  settled_at: string | null
+  created_at: string
+}
+
+export interface RewardRule {
+  id: string
+  name: string
+  verified_reward_units: number
+  capability_bonus_units: number
+  platform_fee_ratio: number
+  min_reputation: number
+  daily_cap_units: number
+  is_active: boolean
+}
+
+export interface RewardGrant {
+  id: string
+  agent_id: string
+  task_id: string
+  amount_units: number
+  base_units: number
+  bonus_units: number
+  reason: string
+  granted_at: string | null
+  created_at: string
+}
+
+export interface EconomyStats {
+  currency: string
+  transactions: Record<string, { count: number; volume: number }>
+  accounts: Record<string, { count: number; balance: number }>
+  held_budgets: { count: number; units: number }
+  rewards: { count: number; units: number }
+}
+
+export interface LedgerVerification {
+  ok: boolean
+  unbalanced_transactions: Record<string, unknown>[]
+  accounts_mismatch: Record<string, unknown>[]
+  total_units: number
+  checked_at: string
+}
+
 // ── Auth ────────────────────────────────────────────────────────────────
 export interface TokenPair {
   access_token: string
@@ -1030,6 +1158,102 @@ export const api = {
 
   trustOverview(signal?: AbortSignal): Promise<TrustOverview> {
     return request<TrustOverview>('/trust/overview', { auth: true, signal })
+  },
+
+  // ── Экономика (этап 6) ──────────────────────────────────────────────
+  myMoney(signal?: AbortSignal): Promise<MoneySummary> {
+    return request<MoneySummary>('/economy/me', { auth: true, signal })
+  },
+
+  accounts(signal?: AbortSignal): Promise<Account[]> {
+    return request<Account[]>('/economy/accounts', { auth: true, signal })
+  },
+
+  accountStatement(accountId: string, signal?: AbortSignal): Promise<AccountStatement> {
+    return request<AccountStatement>(`/economy/accounts/${accountId}/statement`, {
+      auth: true,
+      signal,
+    })
+  },
+
+  transactions(
+    params: { account_id?: string; limit?: number } = {},
+    signal?: AbortSignal,
+  ): Promise<TransactionWithImpact[]> {
+    const query = new URLSearchParams()
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== '') query.set(key, String(value))
+    }
+    const suffix = query.toString() ? `?${query}` : ''
+    return request<TransactionWithImpact[]>(`/economy/transactions${suffix}`, {
+      auth: true,
+      signal,
+    })
+  },
+
+  transfer(payload: {
+    from_account_id: string
+    to_account_id: string
+    amount_units: number
+    comment?: string
+    idempotency_key?: string
+  }): Promise<Transaction> {
+    return request<Transaction>('/economy/transfer', {
+      method: 'POST',
+      auth: true,
+      body: payload,
+    })
+  },
+
+  withdraw(agentId: string, amountUnits: number): Promise<Transaction> {
+    return request<Transaction>('/economy/withdraw', {
+      method: 'POST',
+      auth: true,
+      body: { agent_id: agentId, amount_units: amountUnits },
+    })
+  },
+
+  taskBudget(taskId: string, signal?: AbortSignal): Promise<TaskBudget> {
+    return request<TaskBudget>(`/economy/tasks/${taskId}/budget`, { auth: true, signal })
+  },
+
+  rewardRules(signal?: AbortSignal): Promise<RewardRule[]> {
+    return request<RewardRule[]>('/economy/rules', { auth: true, signal })
+  },
+
+  updateRewardRule(ruleId: string, payload: Partial<RewardRule>): Promise<RewardRule> {
+    return request<RewardRule>(`/economy/rules/${ruleId}`, {
+      method: 'PATCH',
+      auth: true,
+      body: payload,
+    })
+  },
+
+  rewards(
+    params: { agent_id?: string; limit?: number } = {},
+    signal?: AbortSignal,
+  ): Promise<RewardGrant[]> {
+    const query = new URLSearchParams()
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== '') query.set(key, String(value))
+    }
+    const suffix = query.toString() ? `?${query}` : ''
+    return request<RewardGrant[]>(`/economy/rewards${suffix}`, { auth: true, signal })
+  },
+
+  economyStats(signal?: AbortSignal): Promise<EconomyStats> {
+    return request<EconomyStats>('/economy/stats', { auth: true, signal })
+  },
+
+  verifyLedger(): Promise<LedgerVerification> {
+    return request<LedgerVerification>('/economy/verify', { method: 'POST', auth: true })
+  },
+
+  reverseTransaction(transactionId: string, reason: string): Promise<Transaction> {
+    return request<Transaction>(
+      `/economy/transactions/${transactionId}/reverse?reason=${encodeURIComponent(reason)}`,
+      { method: 'POST', auth: true },
+    )
   },
 
   // ── Platform ────────────────────────────────────────────────────────

@@ -136,13 +136,26 @@ async def submit_task(
             "Задание с таким idempotency_key уже существует", code="duplicate_idempotency_key"
         ) from exc
 
+    # Бюджет задания замораживается на эскроу-счёте до расчёта (этап 6).
+    # Недостаток средств — ошибка постановки, а не «тихая» неоплата.
+    if data.budget_units is not None and float(data.budget_units) > 0:
+        from app.services import economy as economy_service
+
+        await economy_service.hold_budget(
+            session, task, requester_id=requester_id, budget_units=float(data.budget_units)
+        )
+
     await _event(
         session,
         task,
         "task.queued",
         actor="user",
         message="Задание поставлено в очередь",
-        data={"agent_id": str(agent.id), "node_id": str(node.id) if node else None},
+        data={
+            "agent_id": str(agent.id),
+            "node_id": str(node.id) if node else None,
+            "budget_units": float(task.budget_units or 0),
+        },
     )
     if node is not None:
         await _event(
@@ -212,6 +225,9 @@ async def cancel_task(
         raise ValidationError("Задание уже завершено", code="task_terminal")
     task.status = TaskStatus.cancelled
     task.finished_at = _now()
+    from app.services import economy as economy_service
+
+    await economy_service.release_task_budget(session, task, reason="задание отменено")
     await _event(
         session, task, "task.cancelled", actor="user", message=reason or "Задание отменено"
     )
@@ -388,6 +404,10 @@ async def complete_task(
             data={"result_hash": task.result_hash, "metrics": data.metrics},
         )
         await _update_agent_counters(session, task.agent_id, success=True, task=task)
+        # Расчёт по бюджету: выплата за фактическую работу, комиссия, возврат
+        from app.services import economy as economy_service
+
+        await economy_service.settle_task_budget(session, task)
     else:
         error = {
             "type": "AgentError",
@@ -424,6 +444,11 @@ async def complete_task(
                 data=error,
             )
             await _update_agent_counters(session, task.agent_id, success=False, task=task)
+            from app.services import economy as economy_service
+
+            await economy_service.release_task_budget(
+                session, task, reason="задание провалено, выплата не производится"
+            )
 
     node.running_tasks = max(0, node.running_tasks - 1)
     await session.flush()
