@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Annotated
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Header, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -17,6 +19,7 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
+from app.core.metrics import metrics
 from app.core.redis_client import close_redis
 from app.db.session import dispose_engine
 
@@ -43,6 +46,51 @@ DESCRIPTION = """
 писать на Python, TypeScript, Go, Rust, Java — система не привязана
 к конкретному стеку или AI-провайдеру.
 """
+
+
+_UUID_RE = re.compile(
+    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
+)
+_LONG_ID_RE = re.compile(r"\b[0-9a-fA-F]{16,}\b")
+_NUMBER_RE = re.compile(r"(?<=/)\d+(?=/|$)")
+
+
+def _route_template(request: Request) -> str:
+    """Шаблон маршрута без идентификаторов.
+
+    Кардинальность меток в Prometheus обязана быть ограниченной: иначе каждый
+    UUID задания создаёт новую серию. `scope["route"]` здесь недоступен —
+    маршрутизация происходит внутри стека middleware, — поэтому путь
+    нормализуется сам: UUID, длинные hex-идентификаторы и числа заменяются
+    плейсхолдерами. Это даёт стабильную метку вида
+    `/api/v1/agents/{id}/versions`.
+    """
+    route = request.scope.get("route")
+    path = getattr(route, "path", None)
+    if path:
+        return str(path)
+    normalized = _UUID_RE.sub("{id}", request.url.path)
+    normalized = _LONG_ID_RE.sub("{id}", normalized)
+    normalized = _NUMBER_RE.sub("{n}", normalized)
+    return normalized[:120]
+
+
+class MetricsMiddleware(BaseHTTPMiddleware):
+    """Считает запросы и длительность; сам `/metrics` не учитывает."""
+
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path in {"/metrics", "/health", "/health/ready"}:
+            return await call_next(request)
+        started = time.perf_counter()
+        response = await call_next(request)
+        duration_ms = (time.perf_counter() - started) * 1000
+        metrics.observe_request(
+            method=request.method,
+            route=_route_template(request),
+            status=response.status_code,
+            duration_ms=duration_ms,
+        )
+        return response
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
@@ -156,9 +204,27 @@ def create_app() -> FastAPI:
     app.add_middleware(GZipMiddleware, minimum_size=1024)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestContextMiddleware)
+    # Метрики регистрируются последними, чтобы измерять полный путь запроса
+    # (включая gzip и контекст), но не учитывать сам scrape.
+    app.add_middleware(MetricsMiddleware)
 
     register_exception_handlers(app)
     app.include_router(api_router, prefix=settings.api_prefix)
+
+    @app.get("/metrics", include_in_schema=False, response_class=Response)
+    async def root_metrics(
+        request: Request,
+        authorization: Annotated[str | None, Header()] = None,
+        x_service_token: Annotated[str | None, Header()] = None,
+    ) -> Response:
+        """Prometheus scrape в корне: стандартный путь, ожидаемый сборщиком."""
+        from app.api.v1.endpoints.ops import render_metrics
+        from app.db.session import get_session_factory
+
+        factory = get_session_factory()
+        async with factory() as session:
+            del request
+            return await render_metrics(session, authorization, x_service_token)
 
     @app.get("/", tags=["root"], summary="Информация о сервисе")
     async def root() -> dict:

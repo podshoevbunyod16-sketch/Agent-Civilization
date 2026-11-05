@@ -635,6 +635,42 @@ export interface TrustOverview {
 }
 
 
+// ── Эксплуатация (этап 9) ──────────────────────────────────────────────
+export interface OpsWarning {
+  code: string
+  severity: 'critical' | 'high' | 'medium' | 'low'
+  message: string
+}
+
+export interface OpsHealth {
+  status: 'ok' | 'degraded' | 'critical'
+  checked_at: string
+  gauges: Record<string, number>
+  warnings: OpsWarning[]
+  process: {
+    instance: string
+    pid: number
+    python: string
+    threads: number
+    max_rss_mb: number
+    uptime_seconds: number
+  }
+  database: {
+    max_connections: number
+    active_connections: number
+    size_bytes: number
+    latency_ms: number
+  }
+}
+
+export interface MaintenanceRun {
+  requeued_tasks: number
+  nodes_offline: number
+  expired_messages: number
+  duration_ms: number
+  gauges: Record<string, number>
+}
+
 // ── Открытая экосистема (этап 8) ───────────────────────────────────────
 export interface CompatCheckItem {
   kind: string
@@ -1256,6 +1292,19 @@ export const api = {
 
   trustOverview(signal?: AbortSignal): Promise<TrustOverview> {
     return request<TrustOverview>('/trust/overview', { auth: true, signal })
+  },
+
+  // ── Эксплуатация (этап 9) ───────────────────────────────────────────
+  opsHealth(signal?: AbortSignal): Promise<OpsHealth> {
+    return request<OpsHealth>('/ops/health', { auth: true, signal })
+  },
+
+  opsTables(signal?: AbortSignal): Promise<{ tables: { table: string; rows: number }[]; total_rows: number }> {
+    return request('/ops/tables', { auth: true, signal })
+  },
+
+  runMaintenance(): Promise<MaintenanceRun> {
+    return request<MaintenanceRun>('/ops/maintenance', { method: 'POST', auth: true })
   },
 
   // ── Открытая экосистема (этап 8) ────────────────────────────────────

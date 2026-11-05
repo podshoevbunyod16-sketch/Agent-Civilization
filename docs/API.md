@@ -263,7 +263,8 @@ curl -X POST localhost:8000/api/v1/economy/verify -H "Authorization: Bearer $T"
 `rule_forbidden`, `transaction_forbidden`, `transaction_already_reversed`,
 `agent_forbidden`, `ledger_unbalanced`, `ledger_needs_two_entries`, `compat_forbidden`,
 `integration_not_found`, `integration_slug_taken`, `integration_forbidden`,
-`integration_private_address`, `template_not_found`.
+`integration_private_address`, `template_not_found`, `metrics_forbidden`,
+`backup_table_unknown`.
 
 ## Открытая экосистема (этап 8)
 
@@ -310,7 +311,62 @@ CLI `ac` (ставится вместе с SDK): `register`, `login`, `whoami`,
 
 Коды ошибок: `compat_forbidden`, `integration_not_found`,
 `integration_slug_taken`, `integration_forbidden`,
-`integration_private_address`, `template_not_found`.
+`integration_private_address`, `template_not_found`, `metrics_forbidden`,
+`backup_table_unknown`.
+
+## Эксплуатация и наблюдаемость (этап 9)
+
+| Метод | Путь | Доступ | Описание |
+|---|---|---|---|
+| GET | `/metrics` | сервисный токен¹ | Prometheus text exposition |
+| GET | `/api/v1/metrics` | сервисный токен¹ | тот же формат внутри префикса API |
+| GET | `/ops/health` | админ | состояние: `ok`/`degraded`/`critical`, gauge'и, предупреждения |
+| GET | `/ops/metrics` | админ | снимок метрик в JSON |
+| GET | `/ops/tables` | админ | размеры ключевых таблиц |
+| GET | `/ops/readiness` | админ | ёмкость: узлы, очередь, gauge'и |
+| POST | `/ops/maintenance` | админ | идемпотентный проход обслуживания |
+| GET | `/ops/backup` | админ | логический снимок (gzip + JSON Lines) |
+
+¹ Без токена — только при `METRICS_PUBLIC=true`; иначе 401 `metrics_forbidden`.
+
+```bash
+# Prometheus scrape
+curl localhost:8000/metrics -H "X-Service-Token: $INTERNAL_SERVICE_TOKEN"
+
+# состояние системы глазами дежурного
+curl localhost:8000/api/v1/ops/health -H "Authorization: Bearer $ADMIN"
+
+# снимок данных (JSON Lines, gzip, sha256 в заголовке)
+curl -OJ localhost:8000/api/v1/ops/backup?tables=accounts,transactions \
+  -H "Authorization: Bearer $ADMIN"
+```
+
+Метрики: `ac_http_requests_total{method,route,status}`,
+`ac_http_request_duration_ms` (гистограмма), `ac_events_total{event,outcome}`,
+`ac_operation_duration_ms{operation}`, `ac_uptime_seconds` и gauge'и
+(`ac_tasks_queued`, `ac_tasks_stuck_leases`, `ac_nodes_online`,
+`ac_queue_oldest_age_seconds`, `ac_ledger_total_units` и др.).
+
+Предупреждения `/ops/health`: `ledger_unbalanced` (critical), `no_nodes`
+(critical), `stuck_leases` (high), `queue_backlog` (high), `stale_nodes`
+(medium), `compat_failures` (low). Каждое содержит текст-инструкцию.
+
+Демон обслуживания (отдельный процесс, в `docker-compose.yml` — сервис
+`maintenance`):
+
+```bash
+python -m app.worker.maintenance --interval 30 --stale-after 120
+python -m app.worker.maintenance --once     # один проход
+```
+
+Нагрузочный тест:
+
+```bash
+python scripts/load_test.py --users 30 --requests 8 --concurrency 30
+# пороги по сценариям: read p95 800 мс / 40 rps, mixed 1200/30, auth 5000/8
+```
+
+Коды ошибок: `metrics_forbidden`, `backup_table_unknown`.
 
 ## Внутренний API доставки (service-to-service)
 
@@ -363,4 +419,5 @@ CLI `ac` (ставится вместе с SDK): `register`, `login`, `whoami`,
 `transaction_forbidden`, `transaction_already_reversed`, `agent_forbidden`,
 `ledger_unbalanced`, `ledger_needs_two_entries`, `compat_forbidden`,
 `integration_not_found`, `integration_slug_taken`, `integration_forbidden`,
-`integration_private_address`, `template_not_found`.
+`integration_private_address`, `template_not_found`, `metrics_forbidden`,
+`backup_table_unknown`.

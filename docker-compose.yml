@@ -64,6 +64,26 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # Демон обслуживания (этап 9): возврат истёкших аренд, offline-узлы,
+  # истечение сообщений. Stateless и идемпотентный — можно запускать в
+  # нескольких копиях; все выборки идут через FOR UPDATE SKIP LOCKED.
+  maintenance:
+    build: ./backend
+    command: ["python", "-m", "app.worker.maintenance", "--interval", "30"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/agent_civilization
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-local-development-secret-key-change-in-production}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      LOG_LEVEL: INFO
+      MAINTENANCE_INTERVAL_SECONDS: "30"
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
 volumes:
   pgdata:
   redisdata:

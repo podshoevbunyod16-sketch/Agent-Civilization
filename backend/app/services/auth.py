@@ -16,8 +16,9 @@ from app.core.security import (
     create_token,
     decode_token,
     hash_password,
+    hash_password_async,
     password_needs_rehash,
-    verify_password,
+    verify_password_async,
 )
 from app.db.models.user import RefreshTokenSession, User, UserRole
 from app.schemas.auth import RegisterRequest
@@ -44,7 +45,7 @@ async def register_user(session: AsyncSession, data: RegisterRequest) -> User:
 
     user = User(
         email=email,
-        password_hash=hash_password(data.password),
+        password_hash=await hash_password_async(data.password),
         display_name=data.display_name,
         role=UserRole.developer,
     )
@@ -65,9 +66,9 @@ async def authenticate(
     """Возвращает (user, needs_rehash). Не раскрывает, что именно неверно."""
     user = await get_user_by_email(session, email)
     if user is None:
-        verify_password(password, _DUMMY_HASH)  # constant-ish time
+        await verify_password_async(password, _DUMMY_HASH)  # constant-ish time
         raise AuthenticationError("Неверный email или пароль", code="invalid_credentials")
-    if not verify_password(password, user.password_hash):
+    if not await verify_password_async(password, user.password_hash):
         raise AuthenticationError("Неверный email или пароль", code="invalid_credentials")
     if not user.is_active:
         raise AuthenticationError("Учётная запись отключена", code="account_disabled")
@@ -188,9 +189,9 @@ async def revoke_all_sessions(session: AsyncSession, user_id: uuid.UUID) -> int:
 async def change_password(
     session: AsyncSession, user: User, current_password: str, new_password: str
 ) -> None:
-    if not verify_password(current_password, user.password_hash):
+    if not await verify_password_async(current_password, user.password_hash):
         raise AuthenticationError("Текущий пароль неверен", code="invalid_credentials")
-    user.password_hash = hash_password(new_password)
+    user.password_hash = await hash_password_async(new_password)
     await revoke_all_sessions(session, user.id)
     await session.flush()
 

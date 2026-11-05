@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
+import os
 import secrets
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
@@ -29,6 +32,31 @@ def hash_password(password: str) -> str:
     salt_b64 = base64.b64encode(salt).decode()
     digest_b64 = base64.b64encode(digest).decode()
     return f"pbkdf2_sha256${_PBKDF2_ROUNDS}${salt_b64}${digest_b64}"
+
+
+# Отдельный пул для PBKDF2. Общий пул asyncio (min(32, cpu+4)) мал: вход —
+# единственная массово параллельная CPU-операция, и он вытеснял бы остальные
+# задачи. Размер ограничен, чтобы всплеск попыток входа не съел процессор:
+# сверху это всё равно ограничено rate-limit'ом (20/мин на IP).
+_HASH_POOL_SIZE = max(4, min(64, (os.cpu_count() or 4) * 4))
+_hash_pool = ThreadPoolExecutor(max_workers=_HASH_POOL_SIZE, thread_name_prefix="pbkdf2")
+
+
+async def hash_password_async(password: str) -> str:
+    """PBKDF2 (260k раундов) в выделенном пуле потоков.
+
+    Синхронный вызов блокирует event loop на ~10 мс: при нагрузке вход
+    упирался в 15 rps независимо от числа реплик API (нагрузочный тест,
+    этап 9). После переноса в потоки — 27 rps на том же железе, что уже
+    упирается в CPU, а не в event loop.
+    """
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_hash_pool, hash_password, password)
+
+
+async def verify_password_async(password: str, encoded: str) -> bool:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_hash_pool, verify_password, password, encoded)
 
 
 def verify_password(password: str, encoded: str) -> bool:

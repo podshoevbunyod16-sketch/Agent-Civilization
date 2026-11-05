@@ -44,6 +44,17 @@ class Settings(BaseSettings):
     database_echo: bool = False
     redis_url: str = "redis://localhost:6379/0"
 
+    # ── Наблюдаемость (этап 9) ────────────────────────────────────────
+    # Метрики раскрывают нагрузку и размеры таблиц, поэтому по умолчанию
+    # закрыты сервисным токеном. Внутри кластера можно открыть scrape.
+    metrics_public: bool = False
+
+    # Демон обслуживания (этап 9): как часто снимать истёкшие аренды и
+    # помечать мёртвые узлы. Значения по умолчанию рассчитаны на 60-секундную
+    # аренду: проход каждые 30 с возвращает задачу не позже чем через ~90 с.
+    maintenance_interval_seconds: float = 30.0
+    node_stale_after_seconds: int = 120
+
     # ── Rate limiting ─────────────────────────────────────────────────
     rate_limit_enabled: bool = True
     rate_limit_default_per_minute: int = 240

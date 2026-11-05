@@ -11,6 +11,7 @@ from app.api.v1.endpoints import (
     health,
     internal,
     nodes,
+    ops,
     orchestration,
     platform,
     realtime,
@@ -30,6 +31,7 @@ api_router.include_router(orchestration.router)
 api_router.include_router(trust.router)
 api_router.include_router(economy.router)
 api_router.include_router(ecosystem.router)
+api_router.include_router(ops.router)
 api_router.include_router(platform.router)
 api_router.include_router(internal.router)
 api_router.include_router(realtime.router)

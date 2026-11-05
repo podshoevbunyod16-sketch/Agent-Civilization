@@ -160,6 +160,10 @@ class ApiUser:
         self.refresh_token = payload["refresh_token"]
 
     @property
+    def password(self) -> str:
+        return PASSWORD
+
+    @property
     def headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.access_token}"}
 
