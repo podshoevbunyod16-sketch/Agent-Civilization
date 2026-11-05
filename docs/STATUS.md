@@ -70,7 +70,12 @@ $ cd frontend && tsc --noEmit && npm run build
   без сервисного токена → `403 invalid_service_token`; WebSocket диалога
   отдал snapshot; чужой пользователь получил `403` на диалог;
 * миграция этапа 3 проверена на чистой базе: `alembic downgrade base`
-  (0 таблиц) → `upgrade head` (16 таблиц), колонка `locked_until` на месте.
+  (0 таблиц) → `upgrade head` (16 таблиц), колонка `locked_until` на месте;
+* CI на GitHub Actions: backend (ruff + 149 тестов на реальном PostgreSQL с
+  миграциями + проверка heads + OpenAPI), frontend (typecheck + build) и
+  Docker-сборка — все зелёные. Попутно найден дефект окружения: `greenlet`
+  не был объявлен в зависимостях, из-за чего в чистом окружении CI падал
+  `alembic upgrade head` (см. дефект 16).
 
 ---
 
@@ -145,6 +150,10 @@ $ cd frontend && tsc --noEmit && npm run build
     self-message → такие вызовы отправляются как `event`.
 15. Пустая тема автоматически создаваемого диалога делала список диалогов
     бесполезным → тема формируется как «Отправитель → Получатель».
+16. `greenlet` не объявлен в зависимостях: SQLAlchemy async использует его в
+    рантайме, локально он стоял транзитивно, а в чистом окружении CI
+    `alembic upgrade head` падал (`ModuleNotFoundError`) и все тесты падали
+    на setup → добавлен в `dependencies`, conftest подсказывает причину.
 
 ---
 
