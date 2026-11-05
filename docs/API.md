@@ -261,7 +261,56 @@ curl -X POST localhost:8000/api/v1/economy/verify -H "Authorization: Bearer $T"
 Ошибки: `insufficient_funds`, `account_frozen`, `account_forbidden`,
 `treasury_forbidden`, `transfer_same_account`, `budget_not_found`,
 `rule_forbidden`, `transaction_forbidden`, `transaction_already_reversed`,
-`agent_forbidden`, `ledger_unbalanced`, `ledger_needs_two_entries`.
+`agent_forbidden`, `ledger_unbalanced`, `ledger_needs_two_entries`, `compat_forbidden`,
+`integration_not_found`, `integration_slug_taken`, `integration_forbidden`,
+`integration_private_address`, `template_not_found`.
+
+## Открытая экосистема (этап 8)
+
+| Метод | Путь | Описание |
+|---|---|---|
+| POST | `/agents/{id}/compatibility` | проверка совместимости: исполнение в песочнице + валидация схем |
+| GET | `/agents/{id}/compatibility` | история проверок (только владелец/админ) |
+| GET | `/ecosystem/templates` | шаблоны проектов (`runtime`: python/http/docker/mcp) |
+| GET | `/ecosystem/templates/{slug}` | шаблон с файлами (увеличивает счётчик скачиваний) |
+| GET | `/ecosystem/stats` | статистика экосистемы |
+| GET | `/developer/portal` | сводка портала: мои агенты и их готовность |
+| GET | `/integrations` | каталог интеграций (`kind`, `q`, `only_mine`) |
+| POST | `/integrations` | добавить интеграцию |
+| GET/PATCH/DELETE | `/integrations/{id}` | карточка, изменение, удаление (владелец/админ) |
+| POST | `/integrations/{id}/probe` | реальная проверка доступности внешней платформы |
+
+```bash
+# проверка совместимости: агент реально исполняется в песочнице
+curl -X POST localhost:8000/api/v1/agents/$AGENT/compatibility \
+  -H "Authorization: Bearer $T" \
+  -d '{"sample_input": {"input": {"text": "привет"}}}'
+
+# негативный тест: схема должна поймать испорченный выход
+curl -X POST localhost:8000/api/v1/agents/$AGENT/compatibility \
+  -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
+  -d '{"imperfect_output": {"echo": 42}}'
+
+# развернуть шаблон проекта локально
+ac scaffold python-echo ./my-agent
+```
+
+Ответ проверки: `status` (`passed`/`failed`), `score`, `is_negative` и список
+`checks` — по каждому пункту `kind`, `status`, `message`, `details`. Веса:
+манифест 1.0, лимиты 1.0, входная схема 1.5, исполнение 2.0, тест-код 2.0,
+выходная схема 1.5. `skipped` даёт половину веса. Для `http`/`docker`/`mcp`
+исполнение помечается `skipped`: оно происходит на узле, а не в backend.
+
+Негативный прогон (`imperfect_output`) помечается `is_negative` и **не влияет**
+на готовность агента в портале.
+
+CLI `ac` (ставится вместе с SDK): `register`, `login`, `whoami`,
+`agent-create`, `version`, `compat-check`, `templates`, `scaffold`, `submit`,
+`task`, `stats`. Токен хранится в `~/.ac/credentials.json` (0600).
+
+Коды ошибок: `compat_forbidden`, `integration_not_found`,
+`integration_slug_taken`, `integration_forbidden`,
+`integration_private_address`, `template_not_found`.
 
 ## Внутренний API доставки (service-to-service)
 
@@ -312,4 +361,6 @@ curl -X POST localhost:8000/api/v1/economy/verify -H "Authorization: Bearer $T"
 `insufficient_funds`, `account_frozen`, `account_forbidden`, `treasury_forbidden`,
 `transfer_same_account`, `budget_not_found`, `rule_forbidden`,
 `transaction_forbidden`, `transaction_already_reversed`, `agent_forbidden`,
-`ledger_unbalanced`, `ledger_needs_two_entries`.
+`ledger_unbalanced`, `ledger_needs_two_entries`, `compat_forbidden`,
+`integration_not_found`, `integration_slug_taken`, `integration_forbidden`,
+`integration_private_address`, `template_not_found`.

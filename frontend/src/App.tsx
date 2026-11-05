@@ -12,6 +12,7 @@ import Conversations from '@/pages/Conversations'
 import Plans from '@/pages/Plans'
 import Trust from '@/pages/Trust'
 import Economy from '@/pages/Economy'
+import Developer from '@/pages/Developer'
 
 const NAV = [
   { section: 'Цивилизация' },
@@ -23,6 +24,7 @@ const NAV = [
   { to: '/conversations', label: 'Диалоги агентов', icon: '⟲' },
   { to: '/trust', label: 'Доверие', icon: '✦' },
   { to: '/economy', label: 'Экономика', icon: '⊚' },
+  { to: '/developer', label: 'Разработчикам', icon: '⌘' },
   { section: 'Управление' },
   { to: '/developer', label: 'Панель разработчика', icon: '⌘' },
   { to: '/infrastructure', label: 'Инфраструктура', icon: '⛁' },
@@ -103,6 +105,7 @@ export default function App() {
           <Route path="/trust" element={<Trust />} />
           <Route path="/trust/:id" element={<Trust />} />
           <Route path="/economy" element={<Economy />} />
+          <Route path="/developer" element={<Developer />} />
           <Route path="/graph" element={<GraphPage />} />
           <Route path="/tasks" element={<TaskCenter />} />
           <Route path="/tasks/:id" element={<TaskCenter />} />

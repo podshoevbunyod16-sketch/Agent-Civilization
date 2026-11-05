@@ -635,6 +635,104 @@ export interface TrustOverview {
 }
 
 
+// ── Открытая экосистема (этап 8) ───────────────────────────────────────
+export interface CompatCheckItem {
+  kind: string
+  status: 'passed' | 'failed' | 'skipped' | 'error'
+  message: string
+  details: Record<string, unknown>
+}
+
+export interface CompatCheck {
+  id: string
+  agent_id: string
+  version_id: string | null
+  requested_by: string
+  status: 'running' | 'passed' | 'failed' | 'error'
+  is_negative: boolean
+  score: number
+  passed_count: number
+  failed_count: number
+  checks: CompatCheckItem[]
+  sample_input: Record<string, unknown>
+  sample_output: Record<string, unknown> | null
+  error: string | null
+  duration_ms: number | null
+  finished_at: string | null
+  created_at: string
+}
+
+export interface Integration {
+  id: string
+  owner_id: string
+  slug: string
+  name: string
+  summary: string
+  description: string
+  kind: string
+  protocol: string
+  base_url: string
+  docs_url: string | null
+  manifest: Record<string, unknown>
+  capabilities: string[]
+  is_public: boolean
+  is_verified: boolean
+  last_checked_at: string | null
+  last_status: string | null
+  last_latency_ms: number | null
+  last_error: string | null
+  check_count: number
+  failure_count: number
+  created_at: string
+}
+
+export interface TemplateFile {
+  path: string
+  language: string
+  content: string
+}
+
+export interface ProjectTemplate {
+  id: string
+  slug: string
+  name: string
+  summary: string
+  description: string
+  runtime: 'python' | 'http' | 'docker' | 'mcp'
+  language: string
+  files: TemplateFile[]
+  manifest: Record<string, unknown>
+  requires_capabilities: string[]
+  downloads: number
+  created_at: string
+}
+
+export interface PortalAgent {
+  agent_id: string
+  name: string
+  slug: string
+  status: string
+  current_version: number
+  last_check: { status: string; score: number; finished_at: string | null } | null
+  last_negative_check: { status: string; finished_at: string | null } | null
+}
+
+export interface PortalOverview {
+  agents: PortalAgent[]
+  agents_total: number
+  agents_ready: number
+  templates: number
+  integrations: number
+}
+
+export interface EcosystemStats {
+  agents: { total: number; by_status: Record<string, number> }
+  checks: { total: number; by_status: Record<string, number> }
+  integrations: { total: number; by_kind: Record<string, number> }
+  templates: number
+  tasks: number
+}
+
 // ── Экономика (этап 6) ─────────────────────────────────────────────────
 export type AccountType = 'user' | 'agent' | 'treasury' | 'escrow'
 export type TransactionKind =
@@ -1158,6 +1256,63 @@ export const api = {
 
   trustOverview(signal?: AbortSignal): Promise<TrustOverview> {
     return request<TrustOverview>('/trust/overview', { auth: true, signal })
+  },
+
+  // ── Открытая экосистема (этап 8) ────────────────────────────────────
+  compatCheck(
+    agentId: string,
+    payload: { sample_input?: Record<string, unknown>; imperfect_output?: Record<string, unknown> } = {},
+  ): Promise<CompatCheck> {
+    return request<CompatCheck>(`/agents/${agentId}/compatibility`, {
+      method: 'POST',
+      auth: true,
+      body: payload,
+    })
+  },
+
+  compatHistory(agentId: string, signal?: AbortSignal): Promise<CompatCheck[]> {
+    return request<CompatCheck[]>(`/agents/${agentId}/compatibility`, { auth: true, signal })
+  },
+
+  integrations(
+    params: { kind?: string; q?: string; only_mine?: boolean } = {},
+    signal?: AbortSignal,
+  ): Promise<Integration[]> {
+    const query = new URLSearchParams()
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== '' && value !== false) query.set(key, String(value))
+    }
+    const suffix = query.toString() ? `?${query}` : ''
+    return request<Integration[]>(`/integrations${suffix}`, { auth: true, signal })
+  },
+
+  addIntegration(payload: Record<string, unknown>): Promise<Integration> {
+    return request<Integration>('/integrations', { method: 'POST', auth: true, body: payload })
+  },
+
+  deleteIntegration(id: string): Promise<{ detail: string }> {
+    return request<{ detail: string }>(`/integrations/${id}`, { method: 'DELETE', auth: true })
+  },
+
+  probeIntegration(id: string): Promise<Integration> {
+    return request<Integration>(`/integrations/${id}/probe`, { method: 'POST', auth: true })
+  },
+
+  templates(runtime?: string, signal?: AbortSignal): Promise<ProjectTemplate[]> {
+    const suffix = runtime ? `?runtime=${encodeURIComponent(runtime)}` : ''
+    return request<ProjectTemplate[]>(`/ecosystem/templates${suffix}`, { auth: true, signal })
+  },
+
+  template(slug: string, signal?: AbortSignal): Promise<ProjectTemplate> {
+    return request<ProjectTemplate>(`/ecosystem/templates/${slug}`, { auth: true, signal })
+  },
+
+  portal(signal?: AbortSignal): Promise<PortalOverview> {
+    return request<PortalOverview>('/developer/portal', { auth: true, signal })
+  },
+
+  ecosystemStats(signal?: AbortSignal): Promise<EcosystemStats> {
+    return request<EcosystemStats>('/ecosystem/stats', { auth: true, signal })
   },
 
   // ── Экономика (этап 6) ──────────────────────────────────────────────

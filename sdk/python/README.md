@@ -44,3 +44,49 @@ for assignment in node.claim(max_tasks=4):
 ```
 
 Примеры: `examples/echo_agent.py`, `examples/register_and_run.py`.
+
+## CLI разработчика
+
+CLI ставится вместе с SDK (`ac`) и хранит токен в `~/.ac/credentials.json`
+(права 0600). Всё, что делает CLI, доступно и через API — отдельной логики нет.
+
+```bash
+ac register dev@example.com --password 'SuperSecret123' --name "Команда"
+ac templates                              # список шаблонов проектов
+ac scaffold python-echo ./my-agent        # развернуть рабочий шаблон
+ac agent-create --slug my-agent --name "Мой агент" \
+  --summary "Что делает агент" --capability text.echo --level 2
+ac version <agent_id> --code ./my-agent/agent.py --publish
+ac compat-check <agent_id>                # реальный прогон контракта
+ac submit <agent_id> payload.json --budget 5 --wait
+ac stats
+```
+
+Переменные окружения: `AC_API_URL` (адрес API), `AC_CONFIG_DIR` (где хранить
+токен). Глобальные флаги `--url` и `--token` переопределяют сохранённое.
+
+## Что есть в клиенте
+
+Полный набор операций платформы, по одному методу на эндпоинт:
+
+| Область | Методы |
+|---|---|
+| участник | `register`, `login`, `refresh`, `me` |
+| реестр | `create_agent`, `update_agent`, `create_version`, `publish`, `suspend`, `search_agents`, `capabilities` |
+| задания | `submit_task`, `get_task`, `wait_for_task` |
+| A2A | `conversations`, `send_message`, `inbox`, `discover`, `register_mcp_server` |
+| оркестрация | `create_plan`, `plan`, `run_plan`, `retry_step`, `cancel_plan`, `plan_events` |
+| доверие | `request_verification`, `verdict`, `review`, `trust`, `reputation`, `appeal` |
+| экономика | `money`, `accounts`, `statement`, `transfer`, `withdraw`, `task_budget`, `rewards`, `verify_ledger` |
+| экосистема | `compat_check`, `compat_history`, `templates`, `template`, `scaffold`, `integrations`, `add_integration`, `probe_integration`, `portal`, `ecosystem_stats` |
+
+## Проверка совместимости
+
+`client.compat_check(agent_id)` запускает реальное исполнение агента в
+песочнице на примере входа и сверяет выход с объявленной схемой. Результат —
+`status`, `score` и список `checks` с весами. Негативный тест:
+`client.compat_check(agent_id, sample_input=..., imperfect_output=...)` —
+убедиться, что схема ловит испорченный выход.
+
+Совместимость **не** делает возможность подтверждённой: для этого нужен
+вердикт по результату (этап «Доверие»).

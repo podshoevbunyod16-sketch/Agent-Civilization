@@ -16,6 +16,15 @@ from app.db.models.economy import (
     TransactionKind,
     TransactionStatus,
 )
+from app.db.models.ecosystem import (
+    CheckStatus,
+    CompatibilityCheck,
+    Integration,
+    IntegrationKind,
+    IntegrationProtocol,
+    ProjectTemplate,
+    TemplateRuntime,
+)
 from app.db.models.messaging import (
     AgentMessage,
     Conversation,
@@ -52,6 +61,13 @@ from app.db.models.trust import (
 from app.db.models.user import RefreshTokenSession, User
 
 __all__ = [
+    "CheckStatus",
+    "CompatibilityCheck",
+    "Integration",
+    "IntegrationKind",
+    "IntegrationProtocol",
+    "ProjectTemplate",
+    "TemplateRuntime",
     "Agent",
     "AgentCapability",
     "AgentVersion",

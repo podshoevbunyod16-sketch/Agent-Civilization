@@ -182,6 +182,9 @@ class TaskPublic(BaseModel):
     error: dict[str, Any] | None
     result_hash: str | None
     cost_units: float
+    # Бюджет, замороженный при постановке (этап 6). Раньше принимался, но не
+    # возвращался — клиент не мог подтвердить, что деньги заморожены.
+    budget_units: float | None = None
     lease_expires_at: datetime | None
     deadline_at: datetime | None
     started_at: datetime | None

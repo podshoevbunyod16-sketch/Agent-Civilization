@@ -20,4 +20,4 @@ from agent_civilization_sdk.client import ApiError, Client, NodeClient
 from agent_civilization_sdk.worker import AgentWorker, agent_function
 
 __all__ = ["ApiError", "Client", "NodeClient", "AgentWorker", "agent_function", "__version__"]
-__version__ = "0.1.0"
+__version__ = "0.2.0"

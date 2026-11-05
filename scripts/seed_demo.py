@@ -265,7 +265,14 @@ async def main() -> int:
         http.headers["Authorization"] = f"Bearer {token}"
         print(f"✓ аккаунт: {ADMIN_EMAIL} / {ADMIN_PASSWORD} (админ)")
 
-        # 2. Агенты + версии
+        # 2. Шаблоны проектов для Developer Portal (этап 8)
+        templates_response = await http.get("/ecosystem/templates")
+        if templates_response.status_code == 200:
+            print(f"✓ шаблоны проектов: {len(templates_response.json())}")
+        else:
+            print(f"! шаблоны недоступны: {templates_response.status_code}")
+
+        # 3. Агенты + версии
         created = {}
         for spec in AGENTS:
             payload = {
