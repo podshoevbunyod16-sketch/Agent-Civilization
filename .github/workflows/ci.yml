@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "arena/**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (lint + tests + migrations)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]" pgserver fakeredis
+
+      - name: Lint (ruff)
+        run: ruff check app tests scripts
+
+      - name: Tests (real PostgreSQL via pgserver, Alembic migrations)
+        env:
+          SECRET_KEY: ci-secret-key-long-enough-for-hs256-32chars
+        run: pytest --cov=app --cov-report=term-missing --cov-fail-under=60
+
+      - name: Alembic migration check (single head)
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres@/postgres?host=/tmp
+        run: |
+          python - <<'PY'
+          from app.db.base import Base
+          import app.db.models  # noqa
+          print("tables:", len(Base.metadata.tables))
+          assert len(Base.metadata.tables) >= 13
+          PY
+          alembic heads
+
+      - name: OpenAPI schema is generated
+        run: python -c "from app.main import app; s=app.openapi(); assert len(s['paths']) > 40; print(len(s['paths']), 'paths')"
+
+  frontend:
+    name: Frontend (typecheck + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+
+  docker:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t agent-civilization-api:ci ./backend
