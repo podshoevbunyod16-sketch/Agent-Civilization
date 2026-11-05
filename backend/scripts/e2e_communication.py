@@ -12,9 +12,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 import uuid
+from pathlib import Path
 
 import httpx
+
+# Скрипт запускается из backend/, но на всякий случай добавляем корень пакета
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 API = "http://127.0.0.1:8000/api/v1"
 SERVICE_TOKEN = "dev-internal-token-2026"
@@ -73,7 +78,8 @@ async def main() -> None:
         body = message.json()
         message_id = body["message"]["id"]
         conversation_id = body["conversation_id"]
-        print(f"1. сообщение поставлено в очередь: {message_id} strategy={body['message']['strategy']}")
+        strategy = body["message"]["strategy"]
+        print(f"1. сообщение поставлено в очередь: {message_id} strategy={strategy}")
 
         # идемпотентность
         again = await http.post(
@@ -90,10 +96,6 @@ async def main() -> None:
         print("2. повтор с тем же idempotency_key вернул то же сообщение (duplicate=True)")
 
         # воркер: одна итерация
-        import sys
-        from pathlib import Path
-
-        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
         from app.worker.message_worker import InternalClient, MessageWorker
 
         client = InternalClient("http://127.0.0.1:8000", SERVICE_TOKEN)
@@ -107,7 +109,8 @@ async def main() -> None:
         final = details.json()
         print(
             f"4. статус сообщения: {final['status']}, попыток={final['attempts']}, "
-            f"latency={final['latency_ms']}ms, ответ={json.dumps(final['response_payload'], ensure_ascii=False)}"
+            f"latency={final['latency_ms']}ms, "
+            f"ответ={json.dumps(final['response_payload'], ensure_ascii=False)}"
         )
         assert final["status"] == "delivered", final
         assert final["response_payload"]["received"]["question"] == "Проверка A2A-доставки"
@@ -119,7 +122,8 @@ async def main() -> None:
         # воркер без сервисного токена не должен пройти
         forbidden = await http.post(f"{API}/internal/messages/claim", json={"limit": 1})
         assert forbidden.status_code == 403, forbidden.text
-        print(f"6. внутренний API без токена: {forbidden.status_code} {forbidden.json()['error']['code']}")
+        error_code = forbidden.json()["error"]["code"]
+        print(f"6. внутренний API без токена: {forbidden.status_code} {error_code}")
 
         # WS-проверка через websockets-клиент
         from websockets.asyncio.client import connect

@@ -487,6 +487,12 @@ async def search_agents(
     return list(rows), total
 
 
+async def known_capability_keys(session: AsyncSession) -> list[str]:
+    """Все ключи возможностей из таксономии (для проверки планов)."""
+    rows = await session.execute(select(Capability.key).where(Capability.is_active.is_(True)))
+    return [row for row in rows.scalars()]
+
+
 async def list_capabilities(
     session: AsyncSession, *, category: str | None = None, active_only: bool = True
 ) -> list[Capability]:

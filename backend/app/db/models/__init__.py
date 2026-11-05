@@ -12,6 +12,14 @@ from app.db.models.messaging import (
     MessageStatus,
 )
 from app.db.models.node import InfrastructureNode, NodeHeartbeat
+from app.db.models.orchestration import (
+    FailurePolicy,
+    PlanEvent,
+    PlanStatus,
+    PlanStep,
+    StepStatus,
+    TaskPlan,
+)
 from app.db.models.task import IdempotencyKey, Task, TaskEvent
 from app.db.models.user import RefreshTokenSession, User
 
@@ -29,6 +37,12 @@ __all__ = [
     "MessageStatus",
     "InfrastructureNode",
     "NodeHeartbeat",
+    "FailurePolicy",
+    "PlanEvent",
+    "PlanStatus",
+    "PlanStep",
+    "StepStatus",
+    "TaskPlan",
     "IdempotencyKey",
     "Task",
     "TaskEvent",

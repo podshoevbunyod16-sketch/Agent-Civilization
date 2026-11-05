@@ -132,6 +132,37 @@ curl -X POST localhost:8000/api/v1/agents -H "Authorization: Bearer $TOKEN" \
 | POST | `/agents/{id}/mcp/sync` | отметить запрос синхронизации инструментов |
 | POST | `/agents/{id}/mcp/call` | вызвать инструмент (202: выполняется воркером) |
 
+## Оркестрация составных заданий (этап 4)
+
+| Метод | Путь | Описание |
+|---|---|---|
+| POST | `/plans` | создать план: `steps` (DAG) или `planner_agent_id` для делегированной декомпозиции |
+| GET | `/plans` · `/plans/{id}` | мои планы и план с шагами + журналом событий |
+| GET | `/plans/{id}/progress` | прогресс (`by_status`, `ready`, `running`, `percent`) |
+| GET | `/plans/{id}/events` | журнал событий плана |
+| GET | `/plans/stats` | статистика планов и шагов |
+| POST | `/plans/{id}/assign` | подобрать исполнителей по возможностям |
+| POST | `/plans/{id}/adopt` | принять декомпозицию от агента-планировщика |
+| POST | `/plans/{id}/run` | запустить готовые шаги (идемпотентно, есть `limit`) |
+| POST | `/plans/{id}/steps/{key}/retry` | повторить неудавшийся шаг |
+| POST | `/plans/{id}/cancel` | отменить план и его активные задания |
+
+Модель: `task_plans` → `plan_steps` → `tasks`. Шаг исполняется обычным
+заданием (лимиты, аренда, fencing, песочница наследуются). Шаг `ready`,
+когда все зависимости `succeeded`; провал зависимости → `skipped`, план
+завершается `failed`. Вход шага фиксируется в `resolved_input` (цель плана +
+собственный вход + результаты зависимостей), поэтому решение агента
+воспроизводимо. ADR-0007.
+
+Контракт декомпозиции для агента-планировщика (языко-независимый JSON):
+
+```json
+{"steps": [{"key": "collect", "name": "Собрать данные",
+            "required_capabilities": ["research.web_search"],
+            "depends_on": [], "input": {}}],
+ "reason": "почему так разбито"}
+```
+
 ## Внутренний API доставки (service-to-service)
 
 Требует заголовок `X-Service-Token`, равный `INTERNAL_SERVICE_TOKEN`.
@@ -166,4 +197,8 @@ curl -X POST localhost:8000/api/v1/agents -H "Authorization: Bearer $TOKEN" \
 `self_message_forbidden`, `chain_depth_exceeded`, `duplicate_message`,
 `message_not_found`, `message_forbidden`, `message_terminal`,
 `conversation_forbidden`, `conversation_closed`, `agent_has_tasks`,
-`mcp_server_missing`, `invalid_service_token`, `internal_api_disabled`.
+`mcp_server_missing`, `invalid_service_token`, `internal_api_disabled`,
+`plan_not_found`, `plan_forbidden`, `plan_finished`, `plan_not_draft`,
+`plan_has_steps`, `step_not_found`, `step_not_retryable`,
+`step_attempts_exhausted`, `cyclic_dependencies`, `unknown_dependency`,
+`invalid_capability_key`, `invalid_planner_output`.

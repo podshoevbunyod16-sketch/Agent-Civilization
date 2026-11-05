@@ -30,7 +30,7 @@ jobs:
           pip install -e ".[dev]" pgserver fakeredis
 
       - name: Lint (ruff)
-        run: ruff check app tests
+        run: ruff check app tests scripts
 
       - name: Tests (real PostgreSQL via pgserver, Alembic migrations)
         env:

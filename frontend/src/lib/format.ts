@@ -32,6 +32,11 @@ export const statusLabels: Record<string, string> = {
   closed: 'Закрыт',
   inbox: 'Inbox',
   sandbox: 'Sandbox',
+  // Планы и шаги
+  planned: 'Спланирован',
+  ready: 'Готов к запуску',
+  skipped: 'Пропущен',
+  blocked: 'Заблокирован',
   request: 'Запрос',
   response: 'Ответ',
   event: 'Событие',
@@ -79,23 +84,30 @@ export function statusTone(status: string): string {
     case 'healthy':
     case 'delivered':
     case 'open':
+    case 'succeeded_plan':
       return 'ok'
     case 'suspended':
     case 'degraded':
     case 'running':
     case 'leased':
     case 'processing':
+    case 'ready':
+    case 'blocked':
       return 'warn'
     case 'failed':
     case 'revoked':
     case 'unhealthy':
     case 'expired':
+    case 'skipped':
       return 'bad'
     case 'queued':
     case 'pending':
     case 'draft':
     case 'closed':
     case 'archived':
+    case 'draft':
+    case 'pending':
+    case 'planned':
       return 'idle'
     default:
       return 'idle'

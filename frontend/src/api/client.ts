@@ -388,6 +388,96 @@ export interface McpServer {
   tools_synced_at: string | null
 }
 
+
+// ── Оркестрация (планы) ─────────────────────────────────────────────────
+export type PlanStatus = 'draft' | 'planned' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+export type StepStatus =
+  | 'pending'
+  | 'ready'
+  | 'queued'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'skipped'
+  | 'blocked'
+
+export interface PlanStep {
+  id: string
+  key: string
+  name: string
+  position: number
+  required_capabilities: string[]
+  depends_on: string[]
+  input_payload: Record<string, unknown>
+  resolved_input: Record<string, unknown>
+  output_payload: Record<string, unknown>
+  error: Record<string, unknown> | null
+  status: StepStatus
+  agent_id: string | null
+  task_id: string | null
+  match_score: number | null
+  attempts: number
+  max_attempts: number
+  started_at: string | null
+  finished_at: string | null
+  duration_ms: number | null
+  note: string | null
+}
+
+export interface PlanSummary {
+  id: string
+  title: string
+  goal: Record<string, unknown>
+  status: PlanStatus
+  max_parallelism: number
+  failure_policy: 'fail_plan' | 'continue_'
+  step_timeout_seconds: number
+  planner_agent_id: string | null
+  planner_message_id: string | null
+  error: Record<string, unknown> | null
+  trace_id: string | null
+  started_at: string | null
+  finished_at: string | null
+  created_at: string
+  updated_at: string | null
+}
+
+export interface PlanEvent {
+  sequence: number
+  event_type: string
+  step_key: string | null
+  actor: string
+  message: string
+  data: Record<string, unknown>
+  created_at: string
+}
+
+export interface PlanDetail extends PlanSummary {
+  steps: PlanStep[]
+  events: PlanEvent[]
+}
+
+export interface PlanProgress {
+  plan_id: string
+  status: PlanStatus
+  total: number
+  by_status: Record<string, number>
+  ready: number
+  running: number
+  finished: number
+  percent: number
+}
+
+export interface PlanRunResult {
+  plan_id: string
+  status: PlanStatus
+  launched: string[]
+  completed: string[]
+  failed: string[]
+  blocked: string[]
+  progress: PlanProgress
+}
+
 // ── Auth ────────────────────────────────────────────────────────────────
 export interface TokenPair {
   access_token: string
@@ -618,6 +708,54 @@ export const api = {
 
   messageStats(signal?: AbortSignal): Promise<Record<string, number>> {
     return request<Record<string, number>>('/messages/stats', { signal })
+  },
+
+  // ── Оркестрация ─────────────────────────────────────────────────────
+  plans(params: Record<string, string | number | undefined> = {}, signal?: AbortSignal) {
+    const search = new URLSearchParams()
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined) continue
+      search.append(key, String(value))
+    }
+    const query = search.toString()
+    return request<Page<PlanSummary>>(`/plans${query ? `?${query}` : ''}`, {
+      auth: true,
+      signal,
+    })
+  },
+
+  plan(id: string, signal?: AbortSignal): Promise<PlanDetail> {
+    return request<PlanDetail>(`/plans/${id}`, { auth: true, signal })
+  },
+
+  createPlan(payload: Record<string, unknown>): Promise<PlanDetail> {
+    return request<PlanDetail>('/plans', { method: 'POST', body: payload, auth: true })
+  },
+
+  runPlan(id: string): Promise<PlanRunResult> {
+    return request<PlanRunResult>(`/plans/${id}/run`, { method: 'POST', auth: true })
+  },
+
+  retryPlanStep(planId: string, stepKey: string): Promise<{ step: PlanStep }> {
+    return request<{ step: PlanStep }>(`/plans/${planId}/steps/${stepKey}/retry`, {
+      method: 'POST',
+      auth: true,
+    })
+  },
+
+  cancelPlan(id: string, reason = ''): Promise<PlanSummary> {
+    return request<PlanSummary>(`/plans/${id}/cancel?reason=${encodeURIComponent(reason)}`, {
+      method: 'POST',
+      auth: true,
+    })
+  },
+
+  planStats(signal?: AbortSignal): Promise<{
+    plans: Record<string, number>
+    plans_total: number
+    steps: Record<string, number>
+  }> {
+    return request('/plans/stats', { auth: true, signal })
   },
 
   // ── Platform ────────────────────────────────────────────────────────
