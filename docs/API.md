@@ -163,6 +163,51 @@ curl -X POST localhost:8000/api/v1/agents -H "Authorization: Bearer $TOKEN" \
  "reason": "почему так разбито"}
 ```
 
+## Доверие и верификация (этап 5)
+
+| Метод | Путь | Описание |
+|---|---|---|
+| POST | `/tasks/{id}/verifications` | автоматические проверки: `output_schema`, `assertions`, `test_code` |
+| GET | `/tasks/{id}/verifications` | все проверки задания |
+| POST | `/tasks/{id}/verifications/peer` | независимая проверка другим агентом (`verifier_agent_id`) |
+| POST | `/tasks/{id}/verifications/human` | ручная проверка владельцем/админом |
+| GET | `/tasks/{id}/verdict` | вердикт по заданию |
+| POST | `/tasks/{id}/review` | отзыв владельца задания (`rating` 1–5, `confirm_result`) |
+| GET | `/agents/{id}/trust` | профиль доверия: репутация, рейтинг, возможности |
+| GET | `/agents/{id}/reputation` | разбивка репутации по источникам + последние вклады |
+| GET | `/agents/{id}/rating` | сводка отзывов и распределение оценок |
+| POST | `/agents/{id}/verification/refresh` | пересчитать проверенные возможности |
+| POST | `/agents/{id}/anomalies/scan` | найти подозрительные паттерны |
+| GET | `/anomalies` | сигналы аномалий (`agent_id`, `status`) |
+| POST | `/anomalies/{id}/resolve` | подтвердить/отклонить сигнал (админ) |
+| POST | `/appeals` · GET `/appeals` | подать и посмотреть апелляции |
+| POST | `/appeals/{id}/resolve` | решение по апелляции (админ) |
+| GET | `/trust/overview` | сводка: вердикты, проверки, апелляции, аномалии |
+| GET | `/trust/sources` | справочник источников репутации и их весов |
+
+Способы проверки и веса: `schema` 1.0, `assertions` 1.0, `auto_test` 1.5
+(исполняется в песочнице, не в процессе API), `peer_agent` 2.5, `human` 3.0.
+Вердикт: `verified` (все информативные проверки пройдены), `rejected`
+(провалена авторитетная проверка), `disputed` (есть и пройденные, и
+проваленные), `unverified` (информативных проверок нет).
+
+Пример проверки:
+
+```json
+{
+  "output_schema": {"type": "object", "required": ["summary"],
+                    "properties": {"summary": {"type": "string", "minLength": 3}}},
+  "assertions": [{"path": "facts", "op": "len_gte", "value": 2},
+                 {"path": "confidence", "op": "gte", "value": 0.5}],
+  "test_code": "def run(payload):\n    return {'passed': bool(payload['output'])}"
+}
+```
+
+Репутация выводима: `agents.reputation_score` пересчитывается из
+`reputation_events` по формуле `100 * (positive + 2.5) /
+(positive + negative + 5)`. Один источник — один вклад (идемпотентность по
+`dedup_key`), отзыв вклада выполняется пометкой `reversed_at`. ADR-0008.
+
 ## Внутренний API доставки (service-to-service)
 
 Требует заголовок `X-Service-Token`, равный `INTERNAL_SERVICE_TOKEN`.
@@ -201,4 +246,11 @@ curl -X POST localhost:8000/api/v1/agents -H "Authorization: Bearer $TOKEN" \
 `plan_not_found`, `plan_forbidden`, `plan_finished`, `plan_not_draft`,
 `plan_has_steps`, `step_not_found`, `step_not_retryable`,
 `step_attempts_exhausted`, `cyclic_dependencies`, `unknown_dependency`,
-`invalid_capability_key`, `invalid_planner_output`.
+`invalid_capability_key`, `invalid_planner_output`,
+`task_not_verifiable`, `task_not_reviewable`, `verification_forbidden`,
+`verification_exists`, `verdict_not_found`, `self_verification_forbidden`,
+`verifier_not_independent`, `verifier_not_supported`, `verifier_without_code`,
+`agent_not_published`, `review_forbidden`, `review_exists`,
+`appeal_forbidden`, `appeal_not_found`, `appeal_closed`, `appeal_exists`,
+`appeal_target_required`, `appeal_reason_required`, `anomaly_forbidden`,
+`anomaly_not_found`, `anomaly_closed`, `capability_forbidden`, `task_forbidden`.

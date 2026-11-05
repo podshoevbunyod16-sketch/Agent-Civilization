@@ -478,6 +478,162 @@ export interface PlanRunResult {
   progress: PlanProgress
 }
 
+
+// ── Доверие и верификация (этап 5) ─────────────────────────────────────
+export type VerificationMethod =
+  | 'schema'
+  | 'auto_test'
+  | 'assertions'
+  | 'peer_agent'
+  | 'human'
+  | 'cross_check'
+export type VerificationStatus = 'pending' | 'running' | 'passed' | 'failed' | 'error' | 'skipped'
+export type VerdictKind = 'unverified' | 'verified' | 'rejected' | 'disputed'
+export type AppealStatus = 'open' | 'accepted' | 'rejected' | 'withdrawn'
+export type AnomalyStatus = 'open' | 'confirmed' | 'dismissed'
+export type AnomalyType =
+  | 'rapid_results'
+  | 'result_reuse'
+  | 'flaky_output'
+  | 'failure_spike'
+  | 'self_dealing'
+  | 'review_ring'
+
+export interface VerificationCheck {
+  id: string
+  task_id: string
+  agent_id: string
+  method: VerificationMethod
+  status: VerificationStatus
+  weight: number
+  passed: boolean | null
+  score: number | null
+  details: Record<string, unknown>
+  error: Record<string, unknown> | null
+  verifier_id: string | null
+  verifier_agent_id: string | null
+  duration_ms: number | null
+  created_at: string
+  finished_at: string | null
+}
+
+export interface TaskVerdictView {
+  task_id: string
+  agent_id: string
+  verdict: VerdictKind
+  score: number | null
+  checks_total: number
+  checks_passed: number
+  independent_checks: number
+  decided_at: string | null
+  details: Record<string, unknown>
+}
+
+export interface VerificationResult {
+  checks: VerificationCheck[]
+  verdict: TaskVerdictView | null
+}
+
+export interface CheckConfig {
+  output_schema?: Record<string, unknown>
+  assertions?: Record<string, unknown>[]
+  test_code?: string
+}
+
+export interface ReputationEvent {
+  id: string
+  source: string
+  delta: number
+  weight: number
+  reason: string
+  task_id: string | null
+  reversed_at: string | null
+  created_at: string
+}
+
+export interface ReputationBreakdown {
+  agent_id: string
+  reputation_score: number
+  formula_score: number
+  positive: number
+  negative: number
+  by_source: Record<string, { count: number; delta: number }>
+  events: ReputationEvent[]
+  verified_results: number
+}
+
+export interface RatingSummary {
+  agent_id: string
+  reviews: number
+  average_rating: number | null
+  confirmed_results: number
+  distribution: Record<string, number>
+}
+
+export interface CapabilityTrust {
+  id: string
+  key: string
+  name: string
+  declared_level: number
+  verified_level: number | null
+  verified_at: string | null
+  trust_level: 'verified' | 'declared' | 'unconfirmed'
+}
+
+export interface AgentTrustProfile {
+  agent_id: string
+  agent_name: string
+  reputation_score: number
+  is_verified: boolean
+  completed_tasks: number
+  failed_tasks: number
+  rating: RatingSummary
+  verdicts: Record<string, number>
+  capabilities: CapabilityTrust[]
+  open_anomalies: number
+  open_appeals: number
+  reputation: ReputationBreakdown | null
+}
+
+export interface Appeal {
+  id: string
+  agent_id: string
+  opened_by_id: string
+  task_id: string | null
+  verification_id: string | null
+  anomaly_id: string | null
+  reason: string
+  evidence: Record<string, unknown>
+  status: AppealStatus
+  resolution: string
+  resolved_by_id: string | null
+  resolved_at: string | null
+  created_at: string
+}
+
+export interface AnomalySignal {
+  id: string
+  agent_id: string
+  anomaly_type: AnomalyType
+  status: AnomalyStatus
+  severity: number
+  details: Record<string, unknown>
+  task_ids: string[]
+  detected_at: string | null
+  resolved_at: string | null
+  created_at: string
+}
+
+export interface TrustOverview {
+  verdicts: Record<string, number>
+  checks: Record<string, Record<string, number>>
+  open_appeals: number
+  open_anomalies: number
+  verified_agents: number
+  total_agents: number
+  verified_capabilities: number
+}
+
 // ── Auth ────────────────────────────────────────────────────────────────
 export interface TokenPair {
   access_token: string
@@ -756,6 +912,124 @@ export const api = {
     steps: Record<string, number>
   }> {
     return request('/plans/stats', { auth: true, signal })
+  },
+
+  // ── Доверие и верификация (этап 5) ──────────────────────────────────
+  runChecks(taskId: string, config: CheckConfig): Promise<VerificationResult> {
+    return request<VerificationResult>(`/tasks/${taskId}/verifications`, {
+      method: 'POST',
+      auth: true,
+      body: config,
+    })
+  },
+
+  humanCheck(taskId: string, passed: boolean, comment = ''): Promise<VerificationCheck> {
+    return request<VerificationCheck>(`/tasks/${taskId}/verifications/human`, {
+      method: 'POST',
+      auth: true,
+      body: { passed, comment },
+    })
+  },
+
+  peerCheck(taskId: string, verifierAgentId: string): Promise<VerificationCheck> {
+    return request<VerificationCheck>(`/tasks/${taskId}/verifications/peer`, {
+      method: 'POST',
+      auth: true,
+      body: { verifier_agent_id: verifierAgentId },
+    })
+  },
+
+  taskChecks(taskId: string, signal?: AbortSignal): Promise<VerificationCheck[]> {
+    return request<VerificationCheck[]>(`/tasks/${taskId}/verifications`, { auth: true, signal })
+  },
+
+  taskVerdict(taskId: string, signal?: AbortSignal): Promise<TaskVerdictView> {
+    return request<TaskVerdictView>(`/tasks/${taskId}/verdict`, { auth: true, signal })
+  },
+
+  reviewTask(
+    taskId: string,
+    payload: { rating: number; comment?: string; confirm_result?: boolean },
+  ): Promise<Record<string, unknown>> {
+    return request(`/tasks/${taskId}/review`, { method: 'POST', auth: true, body: payload })
+  },
+
+  agentTrust(agentId: string, signal?: AbortSignal): Promise<AgentTrustProfile> {
+    return request<AgentTrustProfile>(`/agents/${agentId}/trust`, { auth: true, signal })
+  },
+
+  agentReputation(agentId: string, signal?: AbortSignal): Promise<ReputationBreakdown> {
+    return request<ReputationBreakdown>(`/agents/${agentId}/reputation`, { auth: true, signal })
+  },
+
+  agentRating(agentId: string, signal?: AbortSignal): Promise<RatingSummary> {
+    return request<RatingSummary>(`/agents/${agentId}/rating`, { auth: true, signal })
+  },
+
+  refreshCapabilities(agentId: string): Promise<CapabilityTrust[]> {
+    return request<CapabilityTrust[]>(`/agents/${agentId}/verification/refresh`, {
+      method: 'POST',
+      auth: true,
+    })
+  },
+
+  scanAnomalies(agentId: string): Promise<{ agent_id: string; found: AnomalySignal[] }> {
+    return request(`/agents/${agentId}/anomalies/scan`, { method: 'POST', auth: true })
+  },
+
+  anomalies(
+    params: { agent_id?: string; status?: string; limit?: number } = {},
+    signal?: AbortSignal,
+  ): Promise<AnomalySignal[]> {
+    const query = new URLSearchParams()
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== '') query.set(key, String(value))
+    }
+    const suffix = query.toString() ? `?${query}` : ''
+    return request<AnomalySignal[]>(`/anomalies${suffix}`, { auth: true, signal })
+  },
+
+  resolveAnomaly(anomalyId: string, confirm: boolean): Promise<AnomalySignal> {
+    return request<AnomalySignal>(`/anomalies/${anomalyId}/resolve`, {
+      method: 'POST',
+      auth: true,
+      body: { confirm },
+    })
+  },
+
+  appeals(
+    params: { agent_id?: string; status?: string; limit?: number } = {},
+    signal?: AbortSignal,
+  ): Promise<Appeal[]> {
+    const query = new URLSearchParams()
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== '') query.set(key, String(value))
+    }
+    const suffix = query.toString() ? `?${query}` : ''
+    return request<Appeal[]>(`/appeals${suffix}`, { auth: true, signal })
+  },
+
+  openAppeal(payload: {
+    agent_id: string
+    reason: string
+    task_id?: string
+    verification_id?: string
+    anomaly_id?: string
+    evidence?: Record<string, unknown>
+  }): Promise<Appeal> {
+    return request<Appeal>('/appeals', { method: 'POST', auth: true, body: payload })
+  },
+
+  resolveAppeal(appealId: string, accept: boolean, resolution = ''): Promise<Appeal> {
+    return request<Appeal>(`/appeals/${appealId}/resolve`, {
+      method: 'POST',
+      auth: true,
+      body: { accept, resolution },
+    })
+  },
+
+  trustOverview(signal?: AbortSignal): Promise<TrustOverview> {
+    return request<TrustOverview>('/trust/overview', { auth: true, signal })
   },
 
   // ── Platform ────────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ import Login from '@/pages/Login'
 import GraphPage from '@/pages/GraphPage'
 import Conversations from '@/pages/Conversations'
 import Plans from '@/pages/Plans'
+import Trust from '@/pages/Trust'
 
 const NAV = [
   { section: 'Цивилизация' },
@@ -19,6 +20,7 @@ const NAV = [
   { to: '/tasks', label: 'Центр задач', icon: '≡' },
   { to: '/plans', label: 'Оркестрация', icon: '⋔' },
   { to: '/conversations', label: 'Диалоги агентов', icon: '⟲' },
+  { to: '/trust', label: 'Доверие', icon: '✦' },
   { section: 'Управление' },
   { to: '/developer', label: 'Панель разработчика', icon: '⌘' },
   { to: '/infrastructure', label: 'Инфраструктура', icon: '⛁' },
@@ -96,6 +98,8 @@ export default function App() {
           <Route path="/conversations" element={<Conversations />} />
           <Route path="/plans" element={<Plans />} />
           <Route path="/plans/:id" element={<Plans />} />
+          <Route path="/trust" element={<Trust />} />
+          <Route path="/trust/:id" element={<Trust />} />
           <Route path="/graph" element={<GraphPage />} />
           <Route path="/tasks" element={<TaskCenter />} />
           <Route path="/tasks/:id" element={<TaskCenter />} />

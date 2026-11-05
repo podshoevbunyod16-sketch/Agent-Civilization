@@ -387,7 +387,7 @@ async def complete_task(
             message="Задание выполнено",
             data={"result_hash": task.result_hash, "metrics": data.metrics},
         )
-        await _update_agent_counters(session, task.agent_id, success=True)
+        await _update_agent_counters(session, task.agent_id, success=True, task=task)
     else:
         error = {
             "type": "AgentError",
@@ -423,7 +423,7 @@ async def complete_task(
                 message=error["message"],
                 data=error,
             )
-            await _update_agent_counters(session, task.agent_id, success=False)
+            await _update_agent_counters(session, task.agent_id, success=False, task=task)
 
     node.running_tasks = max(0, node.running_tasks - 1)
     await session.flush()
@@ -431,24 +431,25 @@ async def complete_task(
 
 
 async def _update_agent_counters(
-    session: AsyncSession, agent_id: uuid.UUID, *, success: bool
+    session: AsyncSession, agent_id: uuid.UUID, *, success: bool, task: Task | None = None
 ) -> None:
-    """Счётчики влияют на репутацию. На этапе 5 формула расширяется
-    проверкой результатов; сейчас — детерминированная базовая модель."""
+    """Счётчики + репутационный вклад задания.
+
+    Сама репутация вычисляется в `services/trust.py` из `reputation_events`
+    (этап 5): одно задание — один вклад, идемпотентно по task_id. Здесь
+    только счётчики и вызов хука.
+    """
     agent = await agent_service.get_agent(session, agent_id)
     if success:
         agent.completed_tasks += 1
     else:
         agent.failed_tasks += 1
-    total = agent.completed_tasks + agent.failed_tasks
-    if total:
-        success_ratio = agent.completed_tasks / total
-        # Байесовское сглаживание: 5 фиктивных успехов при старте
-        smoothed = (agent.completed_tasks + 5 * 0.5) / (total + 5)
-        agent.reputation_score = round(min(100.0, max(0.0, smoothed * 100)), 2)
-        if success_ratio == 0 and total > 5:
-            agent.reputation_score = round(min(agent.reputation_score, 30.0), 2)
     await session.flush()
+
+    if task is not None:
+        from app.services import trust as trust_service
+
+        await trust_service.on_task_finished(session, task, success=success)
 
 
 async def expire_leases(session: AsyncSession) -> int:
@@ -480,7 +481,7 @@ async def expire_leases(session: AsyncSession) -> int:
             task.lease_token = None
             task.lease_expires_at = None
             await _event(session, task, "task.expired", message="Все попытки исчерпаны")
-            await _update_agent_counters(session, task.agent_id, success=False)
+            await _update_agent_counters(session, task.agent_id, success=False, task=task)
     await session.flush()
     return requeued
 

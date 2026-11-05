@@ -21,6 +21,21 @@ from app.db.models.orchestration import (
     TaskPlan,
 )
 from app.db.models.task import IdempotencyKey, Task, TaskEvent
+from app.db.models.trust import (
+    AnomalySignal,
+    AnomalyStatus,
+    AnomalyType,
+    Appeal,
+    AppealStatus,
+    ReputationEvent,
+    ReputationSource,
+    TaskReview,
+    TaskVerdict,
+    TaskVerification,
+    Verdict,
+    VerificationMethod,
+    VerificationStatus,
+)
 from app.db.models.user import RefreshTokenSession, User
 
 __all__ = [
@@ -43,6 +58,19 @@ __all__ = [
     "PlanStep",
     "StepStatus",
     "TaskPlan",
+    "AnomalySignal",
+    "AnomalyStatus",
+    "AnomalyType",
+    "Appeal",
+    "AppealStatus",
+    "ReputationEvent",
+    "ReputationSource",
+    "TaskReview",
+    "TaskVerdict",
+    "TaskVerification",
+    "Verdict",
+    "VerificationMethod",
+    "VerificationStatus",
     "IdempotencyKey",
     "Task",
     "TaskEvent",

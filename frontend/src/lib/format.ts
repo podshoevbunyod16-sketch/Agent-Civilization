@@ -32,6 +32,30 @@ export const statusLabels: Record<string, string> = {
   closed: 'Закрыт',
   inbox: 'Inbox',
   sandbox: 'Sandbox',
+  // Доверие и верификация
+  verified: 'Подтверждён',
+  unverified: 'Без проверки',
+  rejected: 'Отклонён',
+  disputed: 'Спорный',
+  passed: 'Пройдена',
+  schema: 'Схема результата',
+  auto_test: 'Тест-код',
+  assertions: 'Утверждения',
+  peer_agent: 'Независимый агент',
+  human: 'Ручная проверка',
+  cross_check: 'Перекрёстная проверка',
+  accepted: 'Удовлетворена',
+  withdrawn: 'Отозвана',
+  confirmed: 'Подтверждена',
+  dismissed: 'Отклонена',
+  declared: 'Заявлен',
+  unconfirmed: 'Неполный',
+  result_reuse: 'Повтор результата',
+  rapid_results: 'Подозрительно быстро',
+  flaky_output: 'Нестабильный результат',
+  failure_spike: 'Всплеск отказов',
+  self_dealing: 'Самопроверка',
+  review_ring: 'Круг отзывов',
   // Планы и шаги
   planned: 'Спланирован',
   ready: 'Готов к запуску',
@@ -85,7 +109,19 @@ export function statusTone(status: string): string {
     case 'delivered':
     case 'open':
     case 'succeeded_plan':
+    case 'verified':
+    case 'passed':
+    case 'accepted':
+    case 'confirmed':
       return 'ok'
+    case 'declared':
+    case 'unconfirmed':
+    case 'disputed':
+      return 'warn'
+    case 'rejected':
+    case 'dismissed':
+    case 'unverified':
+      return 'idle'
     case 'suspended':
     case 'degraded':
     case 'running':
