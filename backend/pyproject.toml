@@ -11,6 +11,9 @@ dependencies = [
   "SQLAlchemy>=2.0.25",
   "alembic>=1.13",
   "asyncpg>=0.29",
+  # SQLAlchemy async требует greenlet в рантайме. На части платформ он не
+  # ставится колёсами автоматически (CI на Python 3.12 падал без него).
+  "greenlet>=3.0",
   "psycopg[binary]>=3.1",
   "PyJWT>=2.8",
   "redis>=5.0",

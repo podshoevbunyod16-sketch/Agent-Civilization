@@ -72,7 +72,15 @@ def migrated_schema() -> Iterator[str]:
         text=True,
     )
     if result.returncode != 0:  # pragma: no cover
-        raise RuntimeError(f"alembic upgrade failed:\n{result.stderr}\n{result.stdout}")
+        hint = ""
+        if "greenlet" in result.stderr:
+            hint = (
+                "\nПодсказка: SQLAlchemy async требует greenlet. "
+                "Установите зависимости проекта: pip install -e '.[dev]'."
+            )
+        raise RuntimeError(
+            f"alembic upgrade failed:{hint}\n{result.stderr}\n{result.stdout}"
+        )
     yield DATABASE_URL
 
 
