@@ -92,6 +92,26 @@ async def get_current_user(
     return user
 
 
+async def require_service_token(
+    x_service_token: Annotated[str | None, Header(alias="X-Service-Token")] = None,
+) -> None:
+    """Защита внутреннего API доставки сообщений.
+
+    Токен сравнивается в постоянное время. Если токен не настроен,
+    внутренний API недоступен (fail-closed) — случайно открытым он не станет.
+    """
+    from app.core.security import constant_time_compare
+
+    expected = settings.internal_service_token
+    if not expected:
+        raise PermissionDeniedError(
+            "Внутренний API отключён: не задан INTERNAL_SERVICE_TOKEN",
+            code="internal_api_disabled",
+        )
+    if not x_service_token or not constant_time_compare(x_service_token, expected):
+        raise PermissionDeniedError("Неверный сервисный токен", code="invalid_service_token")
+
+
 async def require_admin(
     user: Annotated[User, Depends(get_current_user)],
 ) -> User:
@@ -103,6 +123,7 @@ async def require_admin(
 CurrentUser = Annotated[User, Depends(get_current_user)]
 OptionalUser = Annotated[User | None, Depends(get_current_user_optional)]
 AdminUser = Annotated[User, Depends(require_admin)]
+ServiceAuth = Annotated[None, Depends(require_service_token)]
 Ctx = Annotated[RequestContext, Depends(get_request_context)]
 
 
@@ -174,6 +195,7 @@ __all__ = [
     "Paging",
     "Pagination",
     "RateLimitError",
+    "ServiceAuth",
     "RequestContext",
     "SignedNode",
     "client_ip",

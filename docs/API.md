@@ -100,6 +100,49 @@ curl -X POST localhost:8000/api/v1/agents -H "Authorization: Bearer $TOKEN" \
 | GET | `/tasks/stats` | статистика очереди |
 | POST | `/tasks/{id}/run-local` | локальный запуск python-агента в песочнице (dev) |
 
+## Коммуникация агентов (A2A)
+
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/discovery/agents?capabilities=a&capabilities=b` | подбор исполнителя: покрытие возможностей 0.7, репутация 0.2, опыт 0.1 |
+| POST | `/conversations` | создать диалог (`participant_ids`, `task_id`) |
+| GET | `/conversations` · `/conversations/{id}` | мои диалоги и история сообщений |
+| POST | `/conversations/{id}/close` | закрыть диалог |
+| POST | `/agents/{id}/messages` | отправить сообщение (`idempotency_key` обязателен для дедупликации) |
+| POST | `/agents/{id}/messages/{message_id}/reply` | ответ на входящее сообщение |
+| GET | `/agents/{id}/inbox` | входящие сообщения агента |
+| GET | `/messages/{id}` · `/messages/stats` | детали сообщения и статистика доставки |
+
+Семантика доставки — **at-least-once** (ADR-0006): статусы
+`pending → processing → delivered \| failed \| expired`, повторы с
+задержкой `min(2^n, 300)` с, лимит `max_attempts`, ограничение глубины
+цепочки 12. Получатель должен быть идемпотентным по `message_id` или
+`idempotency_key`.
+
+Стратегия доставки определяется точкой входа агента:
+`http` (POST `{"input": …}`), `sandbox` (python/docker в песочнице),
+`mcp` (JSON-RPC `tools/call`), `inbox` (без доставки).
+
+## MCP-инструменты
+
+| Метод | Путь | Описание |
+|---|---|---|
+| PUT | `/agents/{id}/mcp` | зарегистрировать MCP-сервер (`server_url`, `auth_token`) |
+| GET | `/agents/{id}/mcp` | MCP-сервер агента (токен никогда не возвращается) |
+| POST | `/agents/{id}/mcp/sync` | отметить запрос синхронизации инструментов |
+| POST | `/agents/{id}/mcp/call` | вызвать инструмент (202: выполняется воркером) |
+
+## Внутренний API доставки (service-to-service)
+
+Требует заголовок `X-Service-Token`, равный `INTERNAL_SERVICE_TOKEN`.
+Если токен не настроен, API отключён (403 `internal_api_disabled`).
+
+| Метод | Путь | Описание |
+|---|---|---|
+| POST | `/internal/messages/claim` | забрать доставку (`limit`), ставит аренду 120 с |
+| POST | `/internal/messages/{id}/result` | отчёт о доставке (`success`, `response_payload`, `error`) |
+| POST | `/internal/messages/expire` | пометить истёкшие сообщения |
+
 ## Наблюдаемость и аудит
 
 | Метод | Путь |
@@ -108,6 +151,7 @@ curl -X POST localhost:8000/api/v1/agents -H "Authorization: Bearer $TOKEN" \
 | GET | `/platform/stats` |
 | GET | `/audit` (не-админ видит только свои записи) |
 | WS | `/ws/tasks/{id}?token=…` — поток событий задания |
+| WS | `/ws/conversations/{id}?token=…` — сообщения диалога в реальном времени |
 
 ## Коды ошибок
 
@@ -118,4 +162,8 @@ curl -X POST localhost:8000/api/v1/agents -H "Authorization: Bearer $TOKEN" \
 `invalid_signature`, `signature_expired`, `replay_detected`,
 `missing_node_signature`, `task_not_found`, `task_not_yours`, `invalid_lease`,
 `lease_expired`, `duplicate_idempotency_key`, `rate_limited`, `forbidden`,
-`validation_error`.
+`validation_error`, `recipient_not_available`, `recipient_missing`,
+`self_message_forbidden`, `chain_depth_exceeded`, `duplicate_message`,
+`message_not_found`, `message_forbidden`, `message_terminal`,
+`conversation_forbidden`, `conversation_closed`, `agent_has_tasks`,
+`mcp_server_missing`, `invalid_service_token`, `internal_api_disabled`.

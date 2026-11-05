@@ -71,6 +71,14 @@ class Settings(BaseSettings):
     worker_lease_seconds: int = 60
     artifact_storage_dir: str = "./var/artifacts"
 
+    # ── Внутренние сервисы ────────────────────────────────────────────
+    # Сервисный токен для внутреннего API доставки сообщений (message worker).
+    # В production задаётся отдельным секретом; при пустом значении
+    # внутренний API отключён (403), чтобы не открыть его случайно.
+    internal_service_token: str = ""
+    message_max_attempts: int = 3
+    message_worker_poll_interval_seconds: float = 1.0
+
     # ── Registry ──────────────────────────────────────────────────────
     registry_page_size_default: int = 20
     registry_page_size_max: int = 100

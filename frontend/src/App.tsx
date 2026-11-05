@@ -8,6 +8,7 @@ import Infrastructure from '@/pages/Infrastructure'
 import DeveloperPanel from '@/pages/DeveloperPanel'
 import Login from '@/pages/Login'
 import GraphPage from '@/pages/GraphPage'
+import Conversations from '@/pages/Conversations'
 
 const NAV = [
   { section: 'Цивилизация' },
@@ -15,6 +16,7 @@ const NAV = [
   { to: '/agents', label: 'Каталог агентов', icon: '◎' },
   { to: '/graph', label: 'Связи агентов', icon: '⋈' },
   { to: '/tasks', label: 'Центр задач', icon: '≡' },
+  { to: '/conversations', label: 'Диалоги агентов', icon: '⟲' },
   { section: 'Управление' },
   { to: '/developer', label: 'Панель разработчика', icon: '⌘' },
   { to: '/infrastructure', label: 'Инфраструктура', icon: '⛁' },
@@ -89,6 +91,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/agents" element={<AgentsCatalog />} />
           <Route path="/agents/:id" element={<AgentDetail />} />
+          <Route path="/conversations" element={<Conversations />} />
           <Route path="/graph" element={<GraphPage />} />
           <Route path="/tasks" element={<TaskCenter />} />
           <Route path="/tasks/:id" element={<TaskCenter />} />

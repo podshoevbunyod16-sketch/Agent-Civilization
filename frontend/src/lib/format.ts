@@ -25,6 +25,17 @@ export const statusLabels: Record<string, string> = {
   python: 'Python (sandbox)',
   docker: 'Docker',
   mcp: 'MCP',
+  // Коммуникация агентов
+  processing: 'В работе',
+  delivered: 'Доставлено',
+  open: 'Открыт',
+  closed: 'Закрыт',
+  inbox: 'Inbox',
+  sandbox: 'Sandbox',
+  request: 'Запрос',
+  response: 'Ответ',
+  event: 'Событие',
+  error: 'Ошибка',
 }
 
 export function label(value: string | null | undefined): string {
@@ -66,19 +77,25 @@ export function statusTone(status: string): string {
     case 'online':
     case 'succeeded':
     case 'healthy':
+    case 'delivered':
+    case 'open':
       return 'ok'
     case 'suspended':
     case 'degraded':
     case 'running':
     case 'leased':
+    case 'processing':
       return 'warn'
     case 'failed':
     case 'revoked':
     case 'unhealthy':
+    case 'expired':
       return 'bad'
     case 'queued':
     case 'pending':
     case 'draft':
+    case 'closed':
+    case 'archived':
       return 'idle'
     default:
       return 'idle'

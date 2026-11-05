@@ -313,6 +313,81 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   return payload as T
 }
 
+
+// ── Коммуникация агентов ────────────────────────────────────────────────
+export type MessageKind = 'request' | 'response' | 'event' | 'error'
+export type DeliveryStrategy = 'http' | 'sandbox' | 'mcp' | 'inbox'
+export type MessageStatus = 'pending' | 'processing' | 'delivered' | 'failed' | 'expired'
+export type ConversationStatus = 'open' | 'closed' | 'archived'
+
+export interface AgentMessage {
+  id: string
+  conversation_id: string
+  sender_agent_id: string | null
+  recipient_agent_id: string | null
+  kind: MessageKind
+  strategy: DeliveryStrategy
+  status: MessageStatus
+  correlation_id: string | null
+  payload: Record<string, unknown>
+  response_payload: Record<string, unknown>
+  error: Record<string, unknown> | null
+  error_message: string | null
+  attempts: number
+  max_attempts: number
+  latency_ms: number | null
+  delivered_at: string | null
+  created_at: string
+}
+
+export interface ConversationSummary {
+  id: string
+  subject: string
+  status: ConversationStatus
+  participant_ids: string[]
+  task_id: string | null
+  message_count: number
+  last_message_at: string | null
+  created_at: string
+}
+
+export interface ConversationDetail extends ConversationSummary {
+  messages: AgentMessage[]
+}
+
+export interface MessageSendResult {
+  message: AgentMessage
+  is_duplicate: boolean
+  conversation_id: string
+}
+
+export interface CapabilityMatch {
+  agent_id: string
+  slug: string
+  name: string
+  score: number
+  matched_capabilities: string[]
+  missing_capabilities: string[]
+  reputation_score: number
+  completed_tasks: number
+}
+
+export interface DiscoveryResponse {
+  required_capabilities: string[]
+  matches: CapabilityMatch[]
+}
+
+export interface McpServer {
+  agent_id: string
+  name: string
+  server_url: string
+  transport: 'http' | 'stdio'
+  tools: Array<{ name: string; description?: string }>
+  has_auth_token: boolean
+  protocol_version: string | null
+  tools_synced_at: string | null
+}
+
 // ── Auth ────────────────────────────────────────────────────────────────
 export interface TokenPair {
   access_token: string
@@ -477,6 +552,72 @@ export const api = {
 
   cancelTask(id: string, reason: string): Promise<Task> {
     return request<Task>(`/tasks/${id}/cancel`, { method: 'POST', body: { reason }, auth: true })
+  },
+
+
+  // ── Коммуникация агентов ────────────────────────────────────────────
+  conversations(params: Record<string, string | number | undefined> = {}, signal?: AbortSignal) {
+    const search = new URLSearchParams()
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined) continue
+      search.append(key, String(value))
+    }
+    const query = search.toString()
+    return request<Page<ConversationSummary>>(`/conversations${query ? `?${query}` : ''}`, {
+      auth: true,
+      signal,
+    })
+  },
+
+  conversation(id: string, signal?: AbortSignal): Promise<ConversationDetail> {
+    return request<ConversationDetail>(`/conversations/${id}`, { auth: true, signal })
+  },
+
+  createConversation(payload: Record<string, unknown>): Promise<ConversationSummary> {
+    return request<ConversationSummary>('/conversations', { method: 'POST', body: payload, auth: true })
+  },
+
+  closeConversation(id: string): Promise<ConversationSummary> {
+    return request<ConversationSummary>(`/conversations/${id}/close`, { method: 'POST', auth: true })
+  },
+
+  sendMessage(agentId: string, payload: Record<string, unknown>): Promise<MessageSendResult> {
+    return request<MessageSendResult>(`/agents/${agentId}/messages`, {
+      method: 'POST',
+      body: payload,
+      auth: true,
+    })
+  },
+
+  agentInbox(agentId: string, signal?: AbortSignal): Promise<AgentMessage[]> {
+    return request<AgentMessage[]>(`/agents/${agentId}/inbox`, { auth: true, signal })
+  },
+
+  discovery(capabilities: string[], limit = 5, signal?: AbortSignal): Promise<DiscoveryResponse> {
+    const search = new URLSearchParams()
+    for (const capability of capabilities) search.append('capabilities', capability)
+    search.append('limit', String(limit))
+    return request<DiscoveryResponse>(`/discovery/agents?${search.toString()}`, { signal })
+  },
+
+  mcpServer(agentId: string, signal?: AbortSignal): Promise<McpServer> {
+    return request<McpServer>(`/agents/${agentId}/mcp`, { auth: true, signal })
+  },
+
+  registerMcpServer(agentId: string, payload: Record<string, unknown>): Promise<McpServer> {
+    return request<McpServer>(`/agents/${agentId}/mcp`, { method: 'PUT', body: payload, auth: true })
+  },
+
+  callMcpTool(agentId: string, payload: Record<string, unknown>): Promise<MessageSendResult> {
+    return request<MessageSendResult>(`/agents/${agentId}/mcp/call`, {
+      method: 'POST',
+      body: payload,
+      auth: true,
+    })
+  },
+
+  messageStats(signal?: AbortSignal): Promise<Record<string, number>> {
+    return request<Record<string, number>>('/messages/stats', { signal })
   },
 
   // ── Platform ────────────────────────────────────────────────────────

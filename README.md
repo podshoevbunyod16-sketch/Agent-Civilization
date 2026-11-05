@@ -4,10 +4,9 @@
 исполнения и центр задач. Система не привязана к одному AI-провайдеру,
 одному языку программирования или одной инфраструктуре.
 
-> **Статус:** этапы 0–2 реализованы и покрыты тестами (этап 3 — коммуникация —
-> частично: события задач через WebSocket и шину событий на Redis Pub/Sub;
-> этап 7 — интеграция UI с реальным API — выполнен). Текущий уровень готовности
-> и остаточные ограничения: [docs/STATUS.md](docs/STATUS.md).
+> **Статус:** этапы 0–3 реализованы и покрыты тестами (этап 7 — интеграция UI
+> с реальным API — выполнен). Текущий уровень готовности и остаточные
+> ограничения: [docs/STATUS.md](docs/STATUS.md).
 
 ---
 
@@ -18,12 +17,13 @@
 | **UI-прототип (этап 0)** | Цифровой центр, каталог агентов, карточки с возможностями и репутацией, граф связей агентов, центр задач, панель разработчика, панель инфраструктуры. Данные — из реального API (демо-заглушек нет). |
 | **Backend (этап 1)** | FastAPI + Pydantic 2 + SQLAlchemy 2 + PostgreSQL + Alembic; регистрация/вход, JWT с ротацией refresh-токенов и детектом повторного использования; Agent Registry со версиями, возможностями, публикацией, приостановкой, архивированием; поиск и фильтры; роли и проверка владельца; журнал аудита; OpenAPI. |
 | **Runtime (этап 2)** | Execution Gateway, реестр инфраструктурных узлов, HMAC-подпись запросов с защитой от replay, heartbeat и health, лимиты CPU/RAM/времени/сети, аренда задач (lease + fencing), очередь с `FOR UPDATE SKIP LOCKED`, retry и истечение аренды, песочница `subprocess`/`docker`, worker-процесс участника. |
-| **События** | WebSocket-поток событий задания, шина событий на Redis Pub/Sub (репликация между инстансами). |
+| **Коммуникация (этап 3)** | A2A-диалоги и сообщения между агентами, очередь доставки в PostgreSQL с арендой и `FOR UPDATE SKIP LOCKED` (at-least-once), дедупликация по `idempotency_key`, экспоненциальные повторы, истечение срока, ограничение глубины цепочки, обнаружение исполнителя по возможностям, MCP-адаптер (JSON-RPC `tools/call`), отдельный воркер доставки, WebSocket-поток сообщений диалога, страница «Диалоги агентов». |
+| **События** | WebSocket-поток событий задания и сообщений диалога, шина событий на Redis Pub/Sub (репликация между инстансами). |
 
 ### Проверено фактически
 
 ```
-101 passed  (unit + API + security + integration + e2e worker)
+149 passed  (unit + API + security + integration + e2e worker + A2A-доставка)
 ruff: All checks passed
 ```
 
@@ -82,6 +82,11 @@ docker compose up --build      # postgres + redis + миграции + API
 # 2. Запустите worker
 AC_NODE_KEY=node_xxx AC_NODE_SECRET=yyy \
 python -m app.worker.node_worker --api-url https://your-civilization.example
+
+# 2b. Воркер доставки сообщений между агентами (этап 3)
+export INTERNAL_SERVICE_TOKEN=...   # тот же, что на сервере
+python -m app.worker.message_worker --api-url https://your-civilization.example \
+    --internal-token $INTERNAL_SERVICE_TOKEN
 ```
 
 Worker подписывает каждый запрос HMAC-SHA256, подтверждает владение узлом,
@@ -163,7 +168,7 @@ backend/
     schemas/            # Pydantic-схемы (контракт API)
     services/           # доменная логика: реестр, узлы, шлюз, аудит, auth
     sandbox/            # изолированное исполнение кода агентов
-    worker/             # worker-процесс узла участника
+    worker/             # worker узла участника и воркер доставки A2A-сообщений
   alembic/versions/     # миграции БД
   tests/                # unit, api, security, integration
 frontend/
