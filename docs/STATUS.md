@@ -40,7 +40,7 @@ $ ruff check app tests scripts
 All checks passed!
 
 $ cd frontend && tsc --noEmit && npm run build
-✓ built — 291.31 kB JS (gzip 87.72 kB)
+✓ built — 299.49 kB JS (gzip 89.94 kB)
 
 $ python scripts/e2e_trust.py     # живой стек: агент → узел → проверки → апелляция
 E2E OK
