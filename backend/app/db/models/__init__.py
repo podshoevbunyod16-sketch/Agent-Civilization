@@ -58,7 +58,7 @@ from app.db.models.trust import (
     VerificationMethod,
     VerificationStatus,
 )
-from app.db.models.user import RefreshTokenSession, User
+from app.db.models.user import ApiKey, LoginAttempt, OneTimeToken, RefreshTokenSession, User
 
 __all__ = [
     "CheckStatus",
@@ -116,4 +116,7 @@ __all__ = [
     "TaskEvent",
     "RefreshTokenSession",
     "User",
+    "LoginAttempt",
+    "OneTimeToken",
+    "ApiKey",
 ]

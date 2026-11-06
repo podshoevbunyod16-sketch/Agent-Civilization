@@ -18,9 +18,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.errors import register_exception_handlers
-from app.core.logging import configure_logging
+from app.core.logging import clear_log_context, configure_logging, set_log_context
 from app.core.metrics import metrics
 from app.core.redis_client import close_redis
+from app.core.security import TokenError, decode_token
 from app.db.session import dispose_engine
 
 logger = logging.getLogger(__name__)
@@ -94,11 +95,27 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
+    """Correlation ID + контекст логирования + ключ лимита по аккаунту.
+
+    `request.state.user_id` выставляется здесь, до зависимостей: лимиты,
+    вызванные как `dependencies=[Depends(...)]`, выполняются раньше
+    эндпоинта, и без этого они видели бы только IP.
+    """
+
     async def dispatch(self, request: Request, call_next):
         request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
         request.state.request_id = request_id[:64]
+        _set_user_state_from_token(request)
+        set_log_context(
+            request_id=request.state.request_id,
+            user_id=str(getattr(request.state, "user_id", "") or "") or None,
+            route=request.url.path,
+        )
         started = time.perf_counter()
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        finally:
+            clear_log_context()
         duration_ms = round((time.perf_counter() - started) * 1000, 2)
         response.headers["X-Request-ID"] = request.state.request_id
         response.headers["X-Response-Time-Ms"] = str(duration_ms)
@@ -116,12 +133,40 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         return response
 
 
+def _set_user_state_from_token(request: Request) -> None:
+    """Достаёт `sub`/`sid` из access-токена без обращения к БД.
+
+    Подпись проверяется тем же кодом, что и в зависимостях; здесь нужен
+    только идентификатор — для ключа rate-limit и логов. Invalid-токен
+    просто не даёт `user_id`.
+    """
+    header = request.headers.get("authorization") or ""
+    if not header.lower().startswith("bearer "):
+        return
+    token = header[7:].strip()
+    try:
+        payload = decode_token(token, expected_type="access")
+    except TokenError:
+        return
+    request.state.user_id = payload.get("sub")
+    if payload.get("sid"):
+        request.state.session_id = payload["sid"]
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+        )
+        response.headers.setdefault(
+            "Permissions-Policy", "geolocation=(), microphone=(), camera=()"
+        )
+        response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
         if settings.is_production:
             response.headers.setdefault(
                 "Strict-Transport-Security", "max-age=31536000; includeSubDomains"

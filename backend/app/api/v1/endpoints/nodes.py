@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Header, Query, status
 
 from app.api.deps import (
     AdminUser,
@@ -142,11 +142,29 @@ async def update_node(
     summary="Ротация секрета узла",
 )
 async def rotate_secret(
-    node_id: uuid.UUID, session: DbSession, user: CurrentUser, ctx: Ctx
+    node_id: uuid.UUID,
+    session: DbSession,
+    user: CurrentUser,
+    ctx: Ctx,
+    force: bool = Query(
+        default=False,
+        description="Принудительная ротация (только админ, аварийное восстановление)",
+    ),
+    x_node_signature: Annotated[str | None, Header(alias="X-Node-Signature")] = None,
+    x_node_timestamp: Annotated[str | None, Header(alias="X-Node-Timestamp")] = None,
+    x_node_nonce: Annotated[str | None, Header(alias="X-Node-Nonce")] = None,
 ) -> NodeCredentials:
     node = await node_service.get_node(session, node_id)
     node_service.ensure_can_manage(node, user)
-    node_key, secret = await node_service.rotate_node_secret(session, node)
+    node_key, secret = await node_service.rotate_node_secret(
+        session,
+        node,
+        signature=x_node_signature,
+        timestamp=x_node_timestamp,
+        nonce=x_node_nonce,
+        force=force,
+        actor=user,
+    )
     await audit_service.record(
         session,
         action="node.rotate_secret",
@@ -155,7 +173,7 @@ async def rotate_secret(
         actor_id=user.id,
         ip_address=ctx.ip,
         request_id=ctx.request_id,
-        data={"node_key": node_key},
+        data={"node_key": node_key, "forced": force},
     )
     await session.commit()
     return NodeCredentials(node_key=node_key, node_secret=secret)

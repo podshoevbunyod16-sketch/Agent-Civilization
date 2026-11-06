@@ -54,7 +54,9 @@ async def _assignment_payload(session: DbSession, message: AgentMessage) -> dict
         if server is not None:
             mcp_data = {
                 "server_url": server.server_url,
-                "auth_token": server.auth_token,
+                # Секрет расшифровывается только здесь — на пути к воркеру,
+                # доставляющему вызов. Наружу через публичный API он не уходит.
+                "auth_token": messaging_service.decrypt_mcp_token(server.auth_token),
                 "protocol_version": server.protocol_version,
             }
 

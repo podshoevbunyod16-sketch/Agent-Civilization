@@ -12,7 +12,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.api.deps import (
     Ctx,
@@ -20,6 +20,8 @@ from app.api.deps import (
     DbSession,
     OptionalUser,
     Paging,
+    VerifiedUser,
+    rate_limit_critical,
 )
 from app.core.errors import NotFoundError, PermissionDeniedError
 from app.db.models.agent import Agent
@@ -341,12 +343,13 @@ async def get_message(
     "/agents/{agent_id}/mcp",
     response_model=McpServerPublic,
     summary="Зарегистрировать MCP-сервер для агента",
+    dependencies=[Depends(rate_limit_critical)],
 )
 async def register_mcp(
     agent_id: uuid.UUID,
     data: McpServerCreate,
     session: DbSession,
-    user: CurrentUser,
+    user: VerifiedUser,
     ctx: Ctx,
 ) -> McpServerPublic:
     agent = await agent_service.get_agent(session, agent_id)

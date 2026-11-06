@@ -12,7 +12,14 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import select
 
-from app.api.deps import Ctx, CurrentUser, DbSession, rate_limit_default
+from app.api.deps import (
+    Ctx,
+    CurrentUser,
+    DbSession,
+    VerifiedUser,
+    rate_limit_critical,
+    rate_limit_write,
+)
 from app.core.errors import NotFoundError, PermissionDeniedError
 from app.db.models.economy import (
     Account,
@@ -137,10 +144,10 @@ async def transactions(
     response_model=TransactionRead,
     status_code=status.HTTP_201_CREATED,
     summary="Перевод между счетами",
-    dependencies=[Depends(rate_limit_default)],
+    dependencies=[Depends(rate_limit_write)],
 )
 async def transfer(
-    data: TransferRequest, session: DbSession, user: CurrentUser, ctx: Ctx
+    data: TransferRequest, session: DbSession, user: VerifiedUser, ctx: Ctx
 ) -> TransactionRead:
     transaction = await economy_service.transfer(
         session,
@@ -169,10 +176,10 @@ async def transfer(
     response_model=TransactionRead,
     status_code=status.HTTP_201_CREATED,
     summary="Вывести заработок агента на свой счёт",
-    dependencies=[Depends(rate_limit_default)],
+    dependencies=[Depends(rate_limit_critical)],
 )
 async def withdraw(
-    data: WithdrawRequest, session: DbSession, user: CurrentUser, ctx: Ctx
+    data: WithdrawRequest, session: DbSession, user: VerifiedUser, ctx: Ctx
 ) -> TransactionRead:
     transaction = await economy_service.withdraw_agent_earnings(
         session, actor=user, agent_id=data.agent_id, amount_units=data.amount_units

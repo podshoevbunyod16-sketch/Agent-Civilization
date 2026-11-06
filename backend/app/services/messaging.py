@@ -599,6 +599,30 @@ async def message_stats(session: AsyncSession) -> dict[str, int]:
 
 
 # ── MCP ────────────────────────────────────────────────────────────────
+def _encrypt_token(token: str | None) -> str | None:
+    """Токен MCP-сервера хранится только в зашифрованном виде (этап 10, C)."""
+    if not token:
+        return None
+    from app.core.secrets import encrypt_secret
+
+    return encrypt_secret(token)
+
+
+def decrypt_mcp_token(stored: str | None) -> str | None:
+    """Расшифровка для доставки воркеру.
+
+    Новый формат — AES-GCM; значения, сохранённые до этапа 10, остаются
+    читаемыми, чтобы миграция не ломала уже настроенные MCP-серверы.
+    """
+    if not stored:
+        return None
+    from app.core.secrets import CIPHERTEXT_RE, decrypt_secret
+
+    if not CIPHERTEXT_RE.match(stored):
+        return stored  # legacy, перешифруется при следующем обновлении настроек
+    return decrypt_secret(stored)
+
+
 async def register_mcp_server(
     session: AsyncSession, agent: Agent, data: McpServerCreate
 ) -> McpServer:
@@ -610,7 +634,7 @@ async def register_mcp_server(
         existing.server_url = data.server_url
         existing.transport = data.transport
         if data.auth_token is not None:
-            existing.auth_token = data.auth_token
+            existing.auth_token = _encrypt_token(data.auth_token)
         existing.status = "active"
         await session.flush()
         return existing
@@ -620,7 +644,7 @@ async def register_mcp_server(
         name=data.name,
         server_url=data.server_url,
         transport=data.transport,
-        auth_token=data.auth_token,
+        auth_token=_encrypt_token(data.auth_token),
     )
     session.add(server)
     await session.flush()
