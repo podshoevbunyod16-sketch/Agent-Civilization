@@ -139,9 +139,20 @@ jobs:
           PY
 
       - name: Dependency audit (pip-audit) — уязвимости блокируют
+        # Аудит идёт по списку зависимостей из `pyproject.toml`, а не по
+        # установленному окружению: сам проект ставится из исходников и на
+        # PyPI отсутствует, поэтому в режиме `--strict` pip-audit считал это
+        # ошибкой аудита и job падал, не проверив ни одного пакета.
         run: |
-          pip install -e . >/dev/null
-          pip-audit --progress-spinner off --strict || {
+          python - <<'PY'
+          import tomllib
+          data = tomllib.load(open("pyproject.toml", "rb"))
+          deps = list(data["project"]["dependencies"])
+          deps += list(data["project"].get("optional-dependencies", {}).get("dev", []))
+          open("audit-requirements.txt", "w").write("\n".join(deps) + "\n")
+          print(f"к аудиту: {len(deps)} зависимостей")
+          PY
+          pip-audit --progress-spinner off --strict -r audit-requirements.txt || {
             echo "::error::Найдены уязвимые зависимости (pip-audit)";
             exit 1;
           }
