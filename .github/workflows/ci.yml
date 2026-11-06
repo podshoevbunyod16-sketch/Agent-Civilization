@@ -197,6 +197,11 @@ jobs:
           print("Секретов в репозитории не найдено")
           PY
 
+      - name: Build image for scanning
+        # Образ собирается в этом же job: trivy сканирует образ, а не
+        # исходники, и job `docker` со своей сборкой ему не виден.
+        run: docker build -t agent-civilization-api:ci .
+
       - name: Container scan (trivy)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
