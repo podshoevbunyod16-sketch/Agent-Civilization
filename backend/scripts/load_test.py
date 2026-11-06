@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import statistics
 import sys
 import time
@@ -84,14 +85,26 @@ async def _timed(client: httpx.AsyncClient, method: str, path: str, **kwargs: An
     return response.status_code
 
 
-async def ensure_user(client: httpx.AsyncClient) -> tuple[str, str]:
-    """Регистрирует участника и возвращает (token, agent_id) с опубликованным агентом."""
-    email = f"load-{uuid.uuid4().hex[:10]}@example.com"
-    password = "LoadTestPassword2026"
+async def ensure_user(
+    client: httpx.AsyncClient, *, email: str | None = None, password: str | None = None
+) -> tuple[str, str]:
+    """Возвращает (token, agent_id) для участника с опубликованным агентом.
+
+    Если email/пароль заданы (`--login`), участник создаётся один раз до
+    нагрузки, иначе регистрируемся здесь. Причина: регистрация ограничена
+    `RATE_LIMIT_AUTH_PER_MINUTE` (20/мин на IP), и нагрузочный профиль,
+    который создаёт десятки пользователей, измеряет лимит, а не систему.
+    """
+    email = email or f"load-{uuid.uuid4().hex[:10]}@example.com"
+    password = password or "LoadTestPassword2026"
     response = await client.post(
         "/api/v1/auth/register",
         json={"email": email, "password": password, "display_name": "Нагрузка"},
     )
+    if response.status_code == 409:
+        response = await client.post(
+            "/api/v1/auth/login", json={"email": email, "password": password}
+        )
     response.raise_for_status()
     token = response.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
@@ -131,6 +144,7 @@ async def run_scenario(
     concurrency: int,
     token: str,
     agent_id: str,
+    email: str = "",
 ) -> Outcome:
     outcome = Outcome()
     semaphore = asyncio.Semaphore(concurrency)
@@ -147,7 +161,7 @@ async def run_scenario(
                             client,
                             "POST",
                             "/api/v1/auth/login",
-                            json={"email": _LOAD_EMAIL, "password": "LoadTestPassword2026"},
+                            json={"email": email, "password": _LOAD_PASSWORD},
                         )
                     elif scenario == "mixed" and index % 5 == 0:
                         status = await _timed(
@@ -184,11 +198,11 @@ async def run_scenario(
     return summary
 
 
-_LOAD_EMAIL = ""
+_LOAD_PASSWORD = "LoadTestPassword2026"
 
 
 async def main_async(args: argparse.Namespace) -> int:
-    global _LOAD_EMAIL
+    global _LOAD_PASSWORD
     works = args.users * args.requests
     async with httpx.AsyncClient(base_url=args.api, timeout=60.0) as client:
         try:
@@ -196,12 +210,17 @@ async def main_async(args: argparse.Namespace) -> int:
         except httpx.HTTPError as exc:
             print(f"API недоступен: {exc}", file=sys.stderr)
             return 2
-        token, agent_id = await ensure_user(client)
+        if args.email:
+            _LOAD_PASSWORD = args.password or _LOAD_PASSWORD
+        token, agent_id = await ensure_user(
+            client, email=args.email or None, password=args.password or None
+        )
         me = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
-        _LOAD_EMAIL = me.json()["email"]
+        email = me.json()["email"]
 
     scenarios = [args.scenario] if args.scenario != "all" else ["read", "mixed", "auth"]
     failed = False
+    summaries: dict[str, dict[str, Any]] = {}
     for name in scenarios:
         result = await run_scenario(
             api=args.api,
@@ -210,7 +229,9 @@ async def main_async(args: argparse.Namespace) -> int:
             concurrency=args.concurrency,
             token=token,
             agent_id=agent_id,
+            email=email,
         )
+        summaries[name] = result
         limits = THRESHOLDS.get(name, {})
         p95_limit = args.p95 if args.p95 is not None else limits.get("p95", 1500.0)
         rps_limit = args.min_rps if args.min_rps is not None else limits.get("min_rps", 10.0)
@@ -229,6 +250,20 @@ async def main_async(args: argparse.Namespace) -> int:
             f"{result['rps']} rps, avg {result['avg_ms']}ms, p95 {result['p95_ms']}ms, "
             f"p99 {result['p99_ms']}ms, ошибок {result['errors']} {result['codes']} → {verdict}"
         )
+    if args.json_out:
+        from pathlib import Path
+
+        payload = json.dumps(
+            {
+                "scenarios": summaries,
+                "worked_requests": works,
+                "concurrency": args.concurrency,
+                "failed": failed,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        await asyncio.to_thread(Path(args.json_out).write_text, payload, encoding="utf-8")
     print("LOAD " + ("FAIL" if failed else "OK"))
     return 1 if failed else 0
 
@@ -242,6 +277,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--scenario", default="all", choices=["read", "mixed", "auth", "all"]
     )
+    parser.add_argument(
+        "--email",
+        default="",
+        help="существующий участник (иначе регистрируется новый; регистрация лимитирована)",
+    )
+    parser.add_argument("--password", default="")
+    parser.add_argument("--json-out", default="", help="куда записать результат (JSON)")
     parser.add_argument(
         "--p95",
         type=float,

@@ -22,7 +22,8 @@ import uuid
 from decimal import Decimal
 
 import pytest
-from hypothesis import HealthCheck, given, settings as hyp_settings
+from hypothesis import HealthCheck, given
+from hypothesis import settings as hyp_settings
 from hypothesis import strategies as st
 from sqlalchemy import func, select
 
