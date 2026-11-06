@@ -139,11 +139,104 @@ async def update_node(
     return node
 
 
+def rotation_proof_path(node_id: uuid.UUID) -> str:
+    """Путь, который узел подписывает при ротации своего секрета.
+
+    Он содержит идентификатор узла: подпись, полученная для одного узла,
+    не подойдёт для другого (проверка привязана к конкретному node_id).
+    """
+    return f"/nodes/{node_id}/rotate-secret"
+
+
+def _check_timestamp(timestamp: str) -> None:
+    try:
+        ts = int(timestamp)
+    except (TypeError, ValueError) as exc:
+        raise AuthenticationError("Некорректный timestamp", code="invalid_signature") from exc
+    if abs(time.time() - ts) > settings.node_request_max_skew_seconds:
+        raise AuthenticationError("Запрос устарел", code="signature_expired")
+
+
+async def assert_rotation_proof(
+    node: InfrastructureNode,
+    *,
+    signature: str | None,
+    timestamp: str | None,
+    nonce: str | None,
+) -> None:
+    """Доказательство владения текущим секретом узла (этап 10, A #1).
+
+    До этапа 10 владелец узла мог сменить секрет без старой подписи: достаточно
+    было доступа к аккаунту, чтобы выписать себе новый секрет и подписывать
+    heartbeat/claim от имени узла. Теперь ротация требует подписи текущим
+    секретом по каноническому payload (`POST /nodes/{id}/rotate-secret`).
+
+    Replay-защита обязательна: без Redis проверка недоступна, и ротация
+    отклоняется (fail-closed) — молча пропускать проверку нельзя.
+    """
+    if not (signature and timestamp and nonce):
+        raise AuthenticationError(
+            "Ротация секрета требует подписи текущим секретом узла "
+            "(X-Node-Signature/X-Node-Timestamp/X-Node-Nonce)",
+            code="proof_of_possession_required",
+        )
+    _check_timestamp(timestamp)
+    if len(nonce) < 8 or len(nonce) > 128:
+        raise AuthenticationError("Некорректный nonce", code="invalid_signature")
+    seen = await redis_client.consume_once(
+        f"rotate:{node.node_key}:{nonce}", settings.node_request_max_skew_seconds * 2
+    )
+    if seen is None:
+        raise AuthenticationError(
+            "Проверка одноразовости недоступна, ротация отклонена",
+            code="replay_protection_unavailable",
+        )
+    if not seen:
+        raise AuthenticationError("Повторный nonce (replay)", code="replay_detected")
+    if not verify_node_secret_signature(
+        node.secret_hash,
+        signature,
+        node_key=node.node_key,
+        method="POST",
+        path=rotation_proof_path(node.id),
+        timestamp=timestamp,
+        nonce=nonce,
+        body=b"",
+    ):
+        raise AuthenticationError("Неверная подпись", code="invalid_signature")
+
+
 async def rotate_node_secret(
-    session: AsyncSession, node: InfrastructureNode
+    session: AsyncSession,
+    node: InfrastructureNode,
+    *,
+    signature: str | None = None,
+    timestamp: str | None = None,
+    nonce: str | None = None,
+    force: bool = False,
+    actor: User | None = None,
 ) -> tuple[str, str]:
-    node_key, node_secret = generate_node_credentials()
-    node.node_key = node_key
+    """Выдать узлу новые node_key/secret.
+
+    По умолчанию требует доказательства владения старым секретом. `force`
+    доступен только администратору и только для аварийного восстановления
+    (потерянный секрет): действие попадает в аудит с явной пометкой.
+    """
+    if force:
+        if actor is None or not actor.is_admin:
+            raise PermissionDeniedError(
+                "Принудительная ротация доступна только администратору",
+                code="force_rotation_forbidden",
+            )
+    else:
+        await assert_rotation_proof(
+            node, signature=signature, timestamp=timestamp, nonce=nonce
+        )
+    _, node_secret = generate_node_credentials()
+    # Ключ доступа (node_key) сохраняется: это публичный идентификатор, он
+    # попадает в аудит и логи, менять его при ротации секрета не нужно и
+    # вредно — старые записи оставили бы «фантомные» ключи.
+    node_key = node.node_key
     node.secret_hash = hash_node_secret(node_secret)
     node.status = NodeStatus.pending
     node.verified_at = None
@@ -184,6 +277,13 @@ async def authenticate_signed_request(
     seen = await redis_client.consume_once(
         f"{node_key}:{nonce}", settings.node_request_max_skew_seconds * 2
     )
+    if seen is None:
+        # Redis недоступен: пропустить запрос без anti-replay нельзя —
+        # подписанный запрос можно проиграть повторно. Узел повторит.
+        raise AuthenticationError(
+            "Проверка одноразовости недоступна, запрос отклонён",
+            code="replay_protection_unavailable",
+        )
     if not seen:
         raise AuthenticationError("Повторный nonce (replay)", code="replay_detected")
 

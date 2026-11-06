@@ -25,6 +25,7 @@ from app.db.models.ecosystem import (
     ProjectTemplate,
     TemplateRuntime,
 )
+from app.db.models.events import EventOutbox, OutboxStatus
 from app.db.models.messaging import (
     AgentMessage,
     Conversation,
@@ -58,7 +59,7 @@ from app.db.models.trust import (
     VerificationMethod,
     VerificationStatus,
 )
-from app.db.models.user import RefreshTokenSession, User
+from app.db.models.user import ApiKey, LoginAttempt, OneTimeToken, RefreshTokenSession, User
 
 __all__ = [
     "CheckStatus",
@@ -116,4 +117,9 @@ __all__ = [
     "TaskEvent",
     "RefreshTokenSession",
     "User",
+    "LoginAttempt",
+    "OneTimeToken",
+    "ApiKey",
+    "EventOutbox",
+    "OutboxStatus",
 ]

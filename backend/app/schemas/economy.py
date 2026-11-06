@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.db.models.economy import AccountStatus, AccountType, HoldStatus, TransactionKind
 
@@ -74,14 +75,27 @@ class TransactionWithImpact(BaseModel):
 class TransferRequest(BaseModel):
     from_account_id: uuid.UUID
     to_account_id: uuid.UUID
-    amount_units: float = Field(gt=0, le=1_000_000)
+    # Деньги принимаются как Decimal и проверяются на точность: 0.1+0.2
+    # в float даёт 0.30000000000000004, и такие «хвосты» нельзя пускать в
+    # проводки. На границе API сумма конвертируется один раз, дальше в
+    # сервисе используется Decimal с 4 знаками (этап 10, E).
+    amount_units: Decimal = Field(gt=0, le=1_000_000, decimal_places=4)
+
+    @field_validator("amount_units")
+    @classmethod
+    def _precise(cls, value: Decimal) -> Decimal:
+        quantized = value.quantize(Decimal("0.0001"))
+        if quantized != value:
+            raise ValueError("Сумма поддерживает не более 4 знаков после запятой")
+        return quantized
+
     comment: str = Field(default="", max_length=280)
     idempotency_key: str | None = Field(default=None, max_length=160)
 
 
 class WithdrawRequest(BaseModel):
     agent_id: uuid.UUID
-    amount_units: float = Field(gt=0, le=1_000_000)
+    amount_units: Decimal = Field(gt=0, le=1_000_000, decimal_places=4)
 
 
 class BudgetRead(BaseModel):

@@ -18,6 +18,25 @@ from app.db.models.audit import AuditLog
 logger = logging.getLogger(__name__)
 
 
+def _jsonable(value: Any) -> Any:
+    """Рекурсивно приводит значения к JSON-совместимым (Decimal → str)."""
+    from datetime import date, datetime
+    from decimal import Decimal
+
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, Decimal):
+        # Строка, а не float: в аудите важна точность суммы
+        return format(value, "f")
+    if isinstance(value, (uuid.UUID, datetime, date)):
+        return str(value)
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
 async def record(
     session: AsyncSession,
     *,
@@ -42,7 +61,10 @@ async def record(
         ip_address=ip_address,
         user_agent=(user_agent or "")[:255] or None,
         request_id=request_id,
-        data=data or {},
+        # Данные аудита проходят JSON-нормализацию: Decimal, UUID и datetime
+        # не сериализуются напрямую, а падать при записи аудита нельзя —
+        # журнал пишется в той же транзакции, что и сама операция.
+        data=_jsonable(data or {}),
     )
     session.add(entry)
     await session.flush()

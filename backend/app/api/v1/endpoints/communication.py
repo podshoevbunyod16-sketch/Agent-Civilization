@@ -12,7 +12,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.api.deps import (
     Ctx,
@@ -20,6 +20,8 @@ from app.api.deps import (
     DbSession,
     OptionalUser,
     Paging,
+    VerifiedUser,
+    rate_limit_critical,
 )
 from app.core.errors import NotFoundError, PermissionDeniedError
 from app.db.models.agent import Agent
@@ -41,6 +43,7 @@ from app.schemas.messaging import (
 from app.services import agents as agent_service
 from app.services import audit as audit_service
 from app.services import messaging as messaging_service
+from app.services import outbox as outbox_service
 from app.services import ratelimit
 
 router = APIRouter(tags=["communication"])
@@ -221,7 +224,7 @@ async def send_message(
             "duplicate": is_duplicate,
         },
     )
-    await session.commit()
+    await outbox_service.commit_and_dispatch(session)
     return MessageSendResult(
         message=AgentMessagePublic.model_validate(message),
         is_duplicate=is_duplicate,
@@ -277,7 +280,7 @@ async def reply_to_message(
         request_id=ctx.request_id,
         data={"in_reply_to": str(incoming.id), "duplicate": is_duplicate},
     )
-    await session.commit()
+    await outbox_service.commit_and_dispatch(session)
     return MessageSendResult(
         message=AgentMessagePublic.model_validate(message),
         is_duplicate=is_duplicate,
@@ -341,12 +344,13 @@ async def get_message(
     "/agents/{agent_id}/mcp",
     response_model=McpServerPublic,
     summary="Зарегистрировать MCP-сервер для агента",
+    dependencies=[Depends(rate_limit_critical)],
 )
 async def register_mcp(
     agent_id: uuid.UUID,
     data: McpServerCreate,
     session: DbSession,
-    user: CurrentUser,
+    user: VerifiedUser,
     ctx: Ctx,
 ) -> McpServerPublic:
     agent = await agent_service.get_agent(session, agent_id)

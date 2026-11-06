@@ -14,6 +14,7 @@ import Trust from '@/pages/Trust'
 import Economy from '@/pages/Economy'
 import Developer from '@/pages/Developer'
 import Ops from '@/pages/Ops'
+import Security from '@/pages/Security'
 
 const NAV = [
   { section: 'Цивилизация' },
@@ -26,6 +27,7 @@ const NAV = [
   { to: '/trust', label: 'Доверие', icon: '✦' },
   { to: '/economy', label: 'Экономика', icon: '⊚' },
   { to: '/developer', label: 'Разработчикам', icon: '⌘' },
+  { to: '/security', label: 'Безопасность', icon: '🔒' },
   { to: '/ops', label: 'Эксплуатация', icon: '⛭' },
   { section: 'Управление' },
   { to: '/developer', label: 'Панель разработчика', icon: '⌘' },
@@ -108,6 +110,7 @@ export default function App() {
           <Route path="/trust/:id" element={<Trust />} />
           <Route path="/economy" element={<Economy />} />
           <Route path="/developer" element={<Developer />} />
+          <Route path="/security" element={<Security />} />
           <Route path="/ops" element={<Ops />} />
           <Route path="/graph" element={<GraphPage />} />
           <Route path="/tasks" element={<TaskCenter />} />

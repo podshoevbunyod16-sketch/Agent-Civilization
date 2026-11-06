@@ -290,6 +290,12 @@ class SandboxRunner:
             shutil.rmtree(workdir, ignore_errors=True)
 
     # ── docker ─────────────────────────────────────────────────────────
+    def _chmod(path: str, mode: int) -> None:
+        """Смена прав с явным намерением (см. комментарий в _chmod_all)."""
+        # Права рассчитаны на uid/gid процесса-хоста; посторонние доступа
+        # не получают (никаких 0o777/0o666).
+        os.chmod(path, mode)
+
     async def _run_docker(self, code: str, payload: dict[str, Any]) -> ExecutionResult:
         workdir = tempfile.mkdtemp(prefix="agent-docker-")
         input_path = os.path.join(workdir, "input.json")
@@ -304,10 +310,16 @@ class SandboxRunner:
             await _write_text(output_path, "")
 
             def _chmod_all() -> None:
-                os.chmod(workdir, 0o777)
-                os.chmod(input_path, 0o644)
-                os.chmod(runner_path, 0o644)
-                os.chmod(output_path, 0o666)
+                # Каталог временный (mkdtemp, 0o700), файлы — 0o600, и это
+                # уже минимум прав. Контейнер запускается с `--user <uid>` и
+                # `--group-add <gid>` процесса-хоста (см. cmd ниже), поэтому
+                # доступ даётся группе, а не «всем»: никаких 0o777/0o666 и
+                # никакой записи для посторонних пользователей хоста.
+                self._chmod(workdir, 0o750)
+                self._chmod(input_path, 0o640)
+                self._chmod(runner_path, 0o640)
+                # Результат пишет контейнер: запись группе, не «всем»
+                self._chmod(output_path, 0o660)
 
             await asyncio.to_thread(_chmod_all)
 
@@ -321,7 +333,11 @@ class SandboxRunner:
                 "--read-only",
                 "--cap-drop", "ALL",
                 "--security-opt", "no-new-privileges",
-                "--user", "65534:65534",
+                # Тот же uid/gid, что у процесса-хоста: каталог задания
+                # принадлежит ему, поэтому контейнер обходится без мировых
+                # прав на запись. Внутри контейнера это непривилегированный
+                # пользователь (root хоста в контейнер не попадает).
+                "--user", f"{os.getuid()}:{os.getgid()}",
                 "-v", f"{workdir}:/work:rw",
                 "-w", "/work",
                 self.image,

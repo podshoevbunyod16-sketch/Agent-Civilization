@@ -85,6 +85,17 @@ class AgentVersionCreate(BaseModel):
             url = str(cfg.get("url", ""))
             if not url.startswith(("http://", "https://")):
                 raise ValueError("entrypoint_config.url должен начинаться с http:// или https://")
+            # SSRF: endpoint агента вызывается backend'ом, значит он не должен
+            # вести во внутреннюю сеть (метаданные облака, API, БД).
+            from app.core.config import settings
+            from app.core.net_guard import BlockedAddressError, validate_url
+
+            try:
+                validate_url(
+                    url, allow_private=settings.ssrf_allow_private, allow_unresolved=True
+                )
+            except BlockedAddressError as exc:
+                raise ValueError(f"entrypoint_config.url недоступен: {exc}") from exc
         elif self.entrypoint_type is EntrypointType.python:
             if not str(cfg.get("code", "")).strip():
                 raise ValueError("entrypoint_config.code обязателен для python-агента")

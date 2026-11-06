@@ -32,6 +32,7 @@ from typing import Any
 
 import httpx
 
+from app.core import db_metrics
 from app.core.config import settings
 from app.sandbox import SandboxRunner, SandboxUnavailableError
 from app.sandbox.mcp import McpClient, McpError
@@ -126,6 +127,32 @@ class MessageDispatcher:
     async def _deliver_mcp(
         self, assignment: dict[str, Any], payload: dict[str, Any]
     ) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        """Доставка через MCP (JSON-RPC по HTTP).
+
+        Ошибки считаются отдельной метрикой `mcp_error` с `outcome` по типу:
+        по ней видно, деградировал ли конкретный MCP-сервер, не читая логи
+        каждого вызова (этап 10, G). В сообщении об ошибке нет токена и тела
+        запроса — только тип и код.
+        """
+        from app.core.metrics import metrics
+
+        started = time.perf_counter()
+        outcome: dict[str, Any] | None
+        try:
+            payload_out, outcome = await self._deliver_mcp_inner(assignment, payload)
+        finally:
+            metrics.observe_duration(
+                "mcp_tool_call", (time.perf_counter() - started) * 1000.0
+            )
+        if outcome is None:
+            metrics.incr("mcp_call", outcome="ok")
+        else:
+            metrics.incr("mcp_error", outcome=str(outcome.get("type", "unknown"))[:40])
+        return payload_out, outcome
+
+    async def _deliver_mcp_inner(
+        self, assignment: dict[str, Any], payload: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, Any] | None]:
         mcp = assignment.get("mcp") or {}
         server_url = mcp.get("server_url")
         if not server_url:
@@ -196,6 +223,9 @@ class MessageWorker:
                 failed += 1
         self.delivered += delivered
         self.failed += failed
+        # Воркер жив, даже если сообщений не было: `age_seconds` не должен
+        # расти на простое (этап 10, G).
+        db_metrics.heartbeat("message_worker")
         return {"processed": len(batch.get("messages", [])), "delivered": delivered,
                 "failed": failed, "retried": retried}
 

@@ -20,10 +20,10 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-import httpx
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.errors import ConflictError, NotFoundError, PermissionDeniedError, ValidationError
 from app.db.models.agent import Agent, AgentStatus
 from app.db.models.ecosystem import (
@@ -539,11 +539,19 @@ async def probe_integration(session: AsyncSession, integration: Integration) -> 
     Выполняется с сервера, поэтому адрес не должен указывать на внутреннюю
     сеть: приватные диапазоны и localhost запрещены (SSRF-защита).
     """
-    url = _assert_public_url(integration.base_url)
+    # При проверке доступности неразрешимое имя — это не SSRF, а обычный
+    # сбой сети: он должен записаться как failed-проверка, а не как отказ
+    # «внутренний адрес запрещён». Приватные IP отклоняются по-прежнему.
+    url = _assert_public_url(integration.base_url, allow_unresolved=True)
     integration.check_count += 1
     started = time.perf_counter()
     try:
-        async with httpx.AsyncClient(timeout=HTTP_CHECK_TIMEOUT, follow_redirects=False) as client:
+        from app.core.net_guard import SafeAsyncClient
+
+        async with SafeAsyncClient(
+            timeout=HTTP_CHECK_TIMEOUT,
+            allow_private=settings.ssrf_allow_private,
+        ) as client:
             response = await client.get(url)
         latency = round((time.perf_counter() - started) * 1000, 2)
         integration.last_checked_at = _now()
@@ -566,18 +574,26 @@ async def probe_integration(session: AsyncSession, integration: Integration) -> 
     return integration
 
 
-def _assert_public_url(url: str) -> str:
-    from urllib.parse import urlparse
+def _assert_public_url(url: str, *, allow_unresolved: bool = False) -> str:
+    """Проверка адреса интеграции на SSRF (этап 10, A #7).
 
-    parsed = urlparse(url)
-    host = (parsed.hostname or "").lower()
-    if not host:
-        raise ValidationError("Некорректный адрес интеграции")
-    blocked = ("localhost", "127.", "0.0.0.0", "::1", "169.254.", "10.", "192.168.")
-    if host in {"localhost"} or host.startswith(blocked):
-        raise ValidationError(
-            "Проверка внутренних адресов запрещена", code="integration_private_address"
+    Раньше это был строковый блоклист префиксов: `nip.io`, `*.local`,
+    `172.16-31.`, IPv6-mapped и редиректы проходили насквозь. Теперь имя
+    разрешается в IP и проверяется по диапазонам (см. app/core/net_guard).
+    """
+    from app.core.net_guard import BlockedAddressError, validate_url
+
+    try:
+        validate_url(
+            url,
+            allow_private=settings.ssrf_allow_private,
+            allow_unresolved=allow_unresolved,
         )
+    except BlockedAddressError as exc:
+        raise ValidationError(
+            f"Проверка внутренних адресов запрещена: {exc}",
+            code="integration_private_address",
+        ) from exc
     return url
 
 

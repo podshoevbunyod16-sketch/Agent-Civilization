@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy import func, select
@@ -61,6 +62,30 @@ SIGNUP_GRANT_UNITS = 100.0
 DEFAULT_FEE_RATIO = 0.05
 # Допуск на погрешность float при сверке проводок
 EPSILON = 1e-6
+# Квант внутренних единиц: 4 знака. Суммы приходят как Decimal и
+# квантуются один раз на входе в сервис, чтобы 0.1+0.2 не превращалось
+# в хвост float (этап 10, E).
+UNIT_QUANT = Decimal("0.0001")
+MAX_AMOUNT = Decimal("1000000")
+MAX_BALANCE = Decimal("1000000000000")
+
+
+def to_units(value: object) -> Decimal:
+    """Приводит сумму к Decimal с 4 знаками, отклоняя «мусор» и переполнение."""
+    try:
+        amount = value if isinstance(value, Decimal) else Decimal(str(value))
+    except (InvalidOperation, ValueError) as exc:
+        raise ValidationError("Некорректная сумма", code="amount_invalid") from exc
+    if not amount.is_finite():
+        raise ValidationError("Некорректная сумма", code="amount_invalid")
+    quantized = amount.quantize(UNIT_QUANT)
+    if quantized != amount:
+        raise ValidationError(
+            "Сумма поддерживает не более 4 знаков после запятой", code="amount_precision"
+        )
+    if abs(quantized) > MAX_AMOUNT:
+        raise ValidationError("Слишком большая сумма", code="amount_too_large")
+    return quantized
 
 
 def _now() -> datetime:
@@ -166,7 +191,16 @@ async def _lock_accounts(
     ordered = sorted({account.id for account in accounts})
     rows = (
         await session.execute(
-            select(Account).where(Account.id.in_(ordered)).order_by(Account.id).with_for_update()
+            select(Account)
+            .where(Account.id.in_(ordered))
+            .order_by(Account.id)
+            .with_for_update()
+            # populate_existing обязателен: без него SQLAlchemy вернёт уже
+            # загруженные в сессию объекты с их прежними (устаревшими)
+            # балансами, и параллельная транзакция «перезапишет» чужое
+            # списание — классический lost update. Тест
+            # test_concurrent_transfers_do_not_lose_money это ловит.
+            .execution_options(populate_existing=True)
         )
     ).scalars().all()
     locked = {row.id: row for row in rows}
@@ -204,12 +238,20 @@ async def post_transaction(
         raise ValidationError(
             "Сумма проводок должна быть нулём (двойная запись)",
             code="ledger_unbalanced",
-            details={"sum": round(total, 8)},
+            details={"sum": round(float(total), 8)},
         )
     if amount_units < 0:
         raise ValidationError(
             "Сумма транзакции не может быть отрицательной", code="ledger_negative"
         )
+    # Переполнение: сумма и каждая проводка ограничены сверху, чтобы
+    # «бесконечный» баланс нельзя было получить даже при баге в расчётах.
+    to_units(abs(amount_units))  # сумма обязана быть точной (4 знака)
+    for _account, amount in entries:
+        if abs(to_units(abs(amount))) > MAX_AMOUNT:
+            raise ValidationError(
+                "Проводка превышает допустимую сумму", code="amount_too_large"
+            )
 
     if idempotency_key:
         existing = (
@@ -249,8 +291,17 @@ async def post_transaction(
                 code="account_frozen",
                 details={"account_id": str(current.id), "status": current.status.value},
             )
-        new_balance = round(current.balance_units + amount + applied.get(current.id, 0.0), 6)
-        applied[current.id] = applied.get(current.id, 0.0) + amount
+        # Арифметика баланса — в Decimal: складываем кэш, накопленное по
+        # этому же счёту в текущей транзакции и сумму проводки, затем
+        # квантуем один раз. Так 0.1+0.2 не даёт хвоста.
+        precise_amount = to_units(amount)
+        started = to_units(current.balance_units) + to_units(applied.get(current.id, 0.0))
+        new_balance = float(to_units(started + precise_amount))
+        applied[current.id] = float(to_units(applied.get(current.id, 0.0)) + precise_amount)
+        if to_units(new_balance) > MAX_BALANCE:
+            raise ValidationError(
+                "Баланс превысил допустимый предел", code="balance_overflow"
+            )
         # Отрицательный баланс допустим только в пределах credit_limit
         if new_balance < -abs(current.credit_limit) - EPSILON:
             raise ValidationError(
@@ -259,7 +310,7 @@ async def post_transaction(
                 details={
                     "account_id": str(current.id),
                     "balance": round(current.balance_units, 4),
-                    "required": round(-amount, 4),
+                    "required": round(-float(precise_amount), 4),
                 },
             )
         session.add(

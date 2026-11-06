@@ -30,14 +30,52 @@ class RequestContext:
     request_id: str | None
     ip: str | None
     user_agent: str | None
+    # Идентификатор сессии (sid access-токена): нужен тикетам WebSocket и
+    # аудиту — действие привязывается к конкретному входу, а не к аккаунту.
+    session_id: str | None = None
+
+
+def _ip_in_trusted_networks(ip: str) -> bool:
+    import ipaddress
+
+    networks = settings.trusted_proxy_networks
+    if not networks:
+        return False
+    try:
+        address = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    for item in networks:
+        try:
+            if address in ipaddress.ip_network(item, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        # Первый адрес в цепочке — клиент (за доверенным прокси)
-        return forwarded.split(",")[0].strip()[:64]
-    return (request.client.host if request.client else "unknown")[:64]
+    """Адрес клиента с учётом только доверенных прокси (этап 10, A #4).
+
+    Раньше `X-Forwarded-For` принимался от любого источника: клиент ставил
+    произвольный IP и обходил лимиты (перебор паролей с «нового» адреса на
+    каждый запрос). Теперь заголовок читается, только если непосредственный
+    пир соединения входит в `TRUSTED_PROXIES`; из цепочки берётся последний
+    адрес, добавленный уже недоверенной частью, — это и есть клиент.
+    """
+    peer = (request.client.host if request.client else "") or ""
+    if not peer or not _ip_in_trusted_networks(peer):
+        return (peer or "unknown")[:64]
+    forwarded = request.headers.get("x-forwarded-for") or ""
+    chain = [item.strip() for item in forwarded.split(",") if item.strip()]
+    if not chain:
+        return peer[:64]
+    # Идём справа налево: пропускаем доверенные прокси, первый недоверенный —
+    # клиент. Значения левее подконтрольны клиенту и доверять им нельзя.
+    for candidate in reversed(chain):
+        if not _ip_in_trusted_networks(candidate):
+            return candidate[:64]
+    return chain[0][:64]
 
 
 async def get_request_context(request: Request) -> RequestContext:
@@ -45,15 +83,35 @@ async def get_request_context(request: Request) -> RequestContext:
         request_id=getattr(request.state, "request_id", None),
         ip=client_ip(request),
         user_agent=(request.headers.get("user-agent") or "")[:255] or None,
+        session_id=getattr(request.state, "session_id", None),
     )
 
 
+def _limit_identifier(request: Request) -> str:
+    """Ключ лимита: пользователь, если он известен, иначе IP.
+
+    Глобальный middleware ставит `request.state.user_id` из access-токена до
+    вызова эндпоинта, поэтому аутентифицированные запросы ограничиваются по
+    аккаунту (сменой IP лимит не обойти), анонимные — по IP.
+    """
+    user_id = getattr(request.state, "user_id", None)
+    return f"u:{user_id}" if user_id else f"ip:{client_ip(request)}"
+
+
 async def rate_limit_default(request: Request) -> None:
-    await ratelimit.check_default(client_ip(request))
+    await ratelimit.check_default(_limit_identifier(request))
 
 
 async def rate_limit_auth(request: Request) -> None:
-    await ratelimit.check_auth(client_ip(request))
+    await ratelimit.check_auth(f"ip:{client_ip(request)}")
+
+
+async def rate_limit_write(request: Request) -> None:
+    await ratelimit.check_write(_limit_identifier(request))
+
+
+async def rate_limit_critical(request: Request) -> None:
+    await ratelimit.check_critical(_limit_identifier(request))
 
 
 async def get_current_user_optional(
@@ -74,21 +132,38 @@ async def get_current_user_optional(
 
 
 async def get_current_user(
+    request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     session: DbSession,
 ) -> User:
     if credentials is None:
         raise AuthenticationError("Требуется авторизация", code="missing_token")
+    raw = credentials.credentials
+    # API-ключ (`ac_...`) — альтернатива JWT для автоматизации. Проверяется
+    # по хешу в БД; сессии у него нет, отзывается отдельно (этап 10, B).
+    if raw.startswith(auth_service.API_KEY_PREFIX):
+        api_user = await auth_service.resolve_api_key(session, raw)
+        if api_user is None or not api_user.is_active:
+            raise AuthenticationError("Недействительный API-ключ", code="invalid_api_key")
+        request.state.user = api_user
+        request.state.user_id = api_user.id
+        return api_user
     try:
-        payload = decode_token(credentials.credentials, expected_type="access")
+        payload = decode_token(raw, expected_type="access")
         user_id = uuid.UUID(payload["sub"])
     except (TokenError, ValueError, KeyError) as exc:
         raise AuthenticationError("Недействительный токен", code="invalid_token") from exc
-    user = await auth_service.get_user_by_id(session, user_id)
-    if user is None:
-        raise AuthenticationError("Пользователь не найден", code="invalid_token")
-    if not user.is_active:
-        raise AuthenticationError("Учётная запись отключена", code="account_disabled")
+    # Привязка access-токена к сессии: отозванная сессия (logout, reuse-
+    # детекция, админ-отзыв) перестаёт работать немедленно. До этапа 10
+    # проверялся только подпись и активность пользователя — токен жил до
+    # истечения даже после явного выхода.
+    user, session_record = await auth_service.resolve_access_token(session, payload, user_id)
+    if session_record is not None:
+        await auth_service.touch_session(session, session_record)
+    request.state.user = user
+    request.state.user_id = user.id
+    if session_record is not None:
+        request.state.session_id = session_record.session_id
     return user
 
 
@@ -112,6 +187,22 @@ async def require_service_token(
         raise PermissionDeniedError("Неверный сервисный токен", code="invalid_service_token")
 
 
+async def require_verified_email(user: CurrentUser) -> User:
+    """Подтверждение адреса для операций с деньгами и секретами.
+
+    Действует только при `EMAIL_VERIFICATION_REQUIRED=true` (в этой
+    конфигурации регистрация выдаёт неподтверждённый аккаунт). Проверка
+    стоит на операциях, где анонимный/подставной адрес особенно опасен:
+    вывод средств, регистрация узла, MCP-сервер, API-ключи.
+    """
+    if settings.email_verification_required and not user.email_verified:
+        raise PermissionDeniedError(
+            "Подтвердите адрес электронной почты, чтобы выполнить это действие",
+            code="email_verification_required",
+        )
+    return user
+
+
 async def require_admin(
     user: Annotated[User, Depends(get_current_user)],
 ) -> User:
@@ -123,6 +214,7 @@ async def require_admin(
 CurrentUser = Annotated[User, Depends(get_current_user)]
 OptionalUser = Annotated[User | None, Depends(get_current_user_optional)]
 AdminUser = Annotated[User, Depends(require_admin)]
+VerifiedUser = Annotated[User, Depends(require_verified_email)]
 ServiceAuth = Annotated[None, Depends(require_service_token)]
 Ctx = Annotated[RequestContext, Depends(get_request_context)]
 

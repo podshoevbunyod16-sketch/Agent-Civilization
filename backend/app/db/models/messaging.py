@@ -171,7 +171,9 @@ class McpServer(BaseModel):
     transport: Mapped[str] = mapped_column(String(20), default="http", nullable=False)
     protocol_version: Mapped[str] = mapped_column(String(20), default="2024-11-05", nullable=False)
     # Токен доступа к MCP-серверу хранится отдельно и никогда не отдаётся наружу
-    auth_token: Mapped[str | None] = mapped_column(String(500))
+    # Шифротекст AES-256-GCM (см. app/core/secrets.py), а не открытый токен:
+    # версия ключа входит в строку, поэтому колонка с запасом на ротацию.
+    auth_token: Mapped[str | None] = mapped_column(String(2000))
     tools: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
     tools_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)

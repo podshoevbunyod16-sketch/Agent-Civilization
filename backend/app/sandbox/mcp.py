@@ -24,6 +24,12 @@ logger = logging.getLogger(__name__)
 DEFAULT_PROTOCOL_VERSION = "2024-11-05"
 
 
+def _allow_private_networks() -> bool:
+    from app.core.config import settings
+
+    return settings.ssrf_allow_private
+
+
 class McpError(Exception):
     """Ошибка MCP-сервера или транспорта."""
 
@@ -45,6 +51,16 @@ class McpClient:
         protocol_version: str = DEFAULT_PROTOCOL_VERSION,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
+        # SSRF-проверка (этап 10, A #7): адрес MCP-сервера задаёт
+        # пользователь, поэтому он не должен вести во внутреннюю сеть.
+        # При подставленном транспорте (тесты, локальный адаптер) сетевого
+        # соединения нет — проверять резолв нечего, и безопасный клиент не
+        # используется. Для реального транспорта проверка выполняется на
+        # каждый запрос, что закрывает DNS-rebinding.
+        if transport is None:
+            from app.core.net_guard import validate_url
+
+            validate_url(server_url, allow_private=_allow_private_networks())
         self.server_url = server_url
         self.protocol_version = protocol_version
         self._token = auth_token
@@ -55,9 +71,19 @@ class McpClient:
         }
         if auth_token:
             headers["Authorization"] = f"Bearer {auth_token}"
-        self._client = httpx.AsyncClient(
-            timeout=timeout, headers=headers, transport=transport
-        )
+        if transport is not None:
+            # Явный транспорт используется в тестах (MockTransport).
+            self._client = httpx.AsyncClient(
+                timeout=timeout, headers=headers, transport=transport
+            )
+        else:
+            from app.core.net_guard import SafeAsyncClient
+
+            self._client = SafeAsyncClient(
+                timeout=timeout,
+                headers=headers,
+                allow_private=_allow_private_networks(),
+            )
 
     async def close(self) -> None:
         await self._client.aclose()

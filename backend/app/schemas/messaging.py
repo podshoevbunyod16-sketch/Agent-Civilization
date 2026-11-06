@@ -100,6 +100,20 @@ class McpServerCreate(BaseModel):
     def _valid_url(cls, value: str) -> str:
         if not value.startswith(("http://", "https://", "stdio:")):
             raise ValueError("server_url должен начинаться с http://, https:// или stdio:")
+        # SSRF: адрес проверяется по резолву DNS, а не по строковым префиксам
+        # (этап 10, A #7). `stdio:` — транспорт узла, сетевого адреса нет.
+        if not value.startswith("stdio:"):
+            from app.core.config import settings
+            from app.core.net_guard import BlockedAddressError, validate_url
+
+            try:
+                validate_url(
+                    value,
+                    allow_private=settings.ssrf_allow_private,
+                    allow_unresolved=True,
+                )
+            except BlockedAddressError as exc:
+                raise ValueError(f"Адрес недоступен для внешнего вызова: {exc}") from exc
         return value
 
 

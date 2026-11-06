@@ -905,6 +905,48 @@ export interface TokenPair {
   user: UserPublic
 }
 
+export interface AccountSecurity {
+  email_verified: boolean
+  mfa_enabled: boolean
+  mfa_required: boolean
+  active_sessions: number
+  active_api_keys: number
+  warnings: string[]
+}
+
+export interface TokenIssued {
+  message: string
+  delivery: string
+  dev_token: string | null
+}
+
+export interface TotpSetup {
+  secret: string
+  otpauth_uri: string
+  issuer: string
+}
+
+export interface SessionInfo {
+  id: string
+  user_agent: string | null
+  ip_address: string | null
+  created_at: string
+  last_used_at: string | null
+  expires_at: string
+  is_current: boolean
+}
+
+export interface ApiKeyInfo {
+  id: string
+  name: string
+  prefix: string
+  scopes: string[]
+  created_at: string
+  expires_at: string | null
+  last_used_at: string | null
+  revoked_at: string | null
+}
+
 export const api = {
   async register(email: string, password: string, displayName: string): Promise<TokenPair> {
     const data = await request<TokenPair>('/auth/register', {
@@ -915,13 +957,84 @@ export const api = {
     return data
   },
 
-  async login(email: string, password: string): Promise<TokenPair> {
+  async login(email: string, password: string, totpCode?: string): Promise<TokenPair> {
     const data = await request<TokenPair>('/auth/login', {
       method: 'POST',
-      body: { email, password },
+      body: { email, password, ...(totpCode ? { totp_code: totpCode } : {}) },
     })
     tokenStore.set(data.access_token, data.refresh_token)
     return data
+  },
+
+  /**
+   * Одноразовый тикет для WebSocket. Access-токен в query-строке больше не
+   * принимается: он попадает в логи прокси, поэтому браузер получает тикет
+   * на 30 секунд отдельным HTTPS-запросом.
+   */
+  async wsTicket(): Promise<{ ticket: string; expires_in: number }> {
+    return request<{ ticket: string; expires_in: number }>('/ws/ticket', {
+      method: 'POST',
+      auth: true,
+    })
+  },
+
+  // ── Безопасность аккаунта (этап 10, B) ──────────────────────────────
+  accountSecurity(signal?: AbortSignal): Promise<AccountSecurity> {
+    return request<AccountSecurity>('/auth/me/security', { auth: true, signal })
+  },
+
+  requestEmailVerification(): Promise<TokenIssued> {
+    return request<TokenIssued>('/auth/email/request-verification', {
+      method: 'POST',
+      auth: true,
+    })
+  },
+
+  verifyEmail(token: string): Promise<UserPublic> {
+    return request<UserPublic>('/auth/email/verify', { method: 'POST', body: { token } })
+  },
+
+  forgotPassword(email: string): Promise<TokenIssued> {
+    return request<TokenIssued>('/auth/password/forgot', { method: 'POST', body: { email } })
+  },
+
+  resetPassword(token: string, newPassword: string): Promise<{ detail: string }> {
+    return request('/auth/password/reset', {
+      method: 'POST',
+      body: { token, new_password: newPassword },
+    })
+  },
+
+  startTotp(): Promise<TotpSetup> {
+    return request<TotpSetup>('/auth/2fa/setup', { method: 'POST', auth: true })
+  },
+
+  enableTotp(code: string): Promise<{ recovery_codes: string[]; warning: string }> {
+    return request('/auth/2fa/enable', { method: 'POST', auth: true, body: { code } })
+  },
+
+  disableTotp(code: string): Promise<{ detail: string }> {
+    return request('/auth/2fa/disable', { method: 'POST', auth: true, body: { code } })
+  },
+
+  sessions(signal?: AbortSignal): Promise<SessionInfo[]> {
+    return request<SessionInfo[]>('/auth/sessions', { auth: true, signal })
+  },
+
+  revokeSession(id: string): Promise<{ detail: string }> {
+    return request(`/auth/sessions/${id}`, { method: 'DELETE', auth: true })
+  },
+
+  apiKeys(signal?: AbortSignal): Promise<ApiKeyInfo[]> {
+    return request<ApiKeyInfo[]>('/auth/api-keys', { auth: true, signal })
+  },
+
+  createApiKey(name: string, scopes: string[] = []): Promise<{ key: string; api_key: ApiKeyInfo }> {
+    return request('/auth/api-keys', { method: 'POST', auth: true, body: { name, scopes } })
+  },
+
+  revokeApiKey(id: string): Promise<{ detail: string }> {
+    return request(`/auth/api-keys/${id}`, { method: 'DELETE', auth: true })
   },
 
   async logout(): Promise<void> {
