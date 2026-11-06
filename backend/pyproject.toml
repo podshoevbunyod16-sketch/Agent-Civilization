@@ -28,6 +28,8 @@ dev = [
   "pytest-cov>=4.1",
   "ruff>=0.3",
   "fakeredis>=2.21",
+  # Property-based и chaotic-тесты финансовых инвариантов (этап 10, E/H)
+  "hypothesis>=6.100",
 ]
 
 [tool.pytest.ini_options]
