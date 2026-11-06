@@ -44,6 +44,14 @@ class Settings(BaseSettings):
     database_echo: bool = False
     redis_url: str = "redis://localhost:6379/0"
 
+    # ── Сетевые ограничения (этап 10, A) ─────────────────────────────
+    # Разрешать исходящие запросы во внутренние сети. Только для dev/test:
+    # в production проверка конфигурации это запрещает.
+    ssrf_allow_private: bool = False
+    # Таймаут и предельный размер ответа для проверок внешних адресов.
+    outbound_timeout_seconds: float = 10.0
+    outbound_max_redirects: int = 0
+
     # ── Секреты (этап 10, C) ──────────────────────────────────────────
     # Кольцо ключей шифрования секретов: "1:<base64 32 байта>,2:<base64>".
     # Активна старшая версия; старые нужны для чтения уже сохранённых секретов.
@@ -215,6 +223,11 @@ class Settings(BaseSettings):
                 problems.append(
                     "PUBLIC_BASE_URL должен быть https-адресом: по ссылке из письма "
                     "передаётся одноразовый токен"
+                )
+            if self.ssrf_allow_private:
+                problems.append(
+                    "SSRF_ALLOW_PRIVATE=true недопустим в production: "
+                    "исходящие запросы должны блокироваться во внутренние сети"
                 )
             if self.rate_limit_enabled and not self.redis_url:
                 problems.append("RATE_LIMIT_ENABLED=true требует REDIS_URL")

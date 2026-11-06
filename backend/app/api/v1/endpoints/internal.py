@@ -24,6 +24,7 @@ from app.db.models.agent import Agent, AgentVersion
 from app.db.models.messaging import AgentMessage, MessageStatus
 from app.schemas.common import Message
 from app.services import messaging as messaging_service
+from app.services import outbox as outbox_service
 
 router = APIRouter(prefix="/internal/messages", tags=["internal"])
 
@@ -135,7 +136,7 @@ async def report_delivery(
         await messaging_service.mark_failed(session, message, error=unknown)
         retry_scheduled = message.status is MessageStatus.pending
         status = message.status.value
-    await session.commit()
+    await outbox_service.commit_and_dispatch(session)
     return {
         "message_id": str(message.id),
         "status": status,

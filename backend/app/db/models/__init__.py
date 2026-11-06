@@ -25,6 +25,7 @@ from app.db.models.ecosystem import (
     ProjectTemplate,
     TemplateRuntime,
 )
+from app.db.models.events import EventOutbox, OutboxStatus
 from app.db.models.messaging import (
     AgentMessage,
     Conversation,
@@ -119,4 +120,6 @@ __all__ = [
     "LoginAttempt",
     "OneTimeToken",
     "ApiKey",
+    "EventOutbox",
+    "OutboxStatus",
 ]

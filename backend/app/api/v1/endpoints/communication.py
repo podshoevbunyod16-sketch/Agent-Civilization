@@ -43,6 +43,7 @@ from app.schemas.messaging import (
 from app.services import agents as agent_service
 from app.services import audit as audit_service
 from app.services import messaging as messaging_service
+from app.services import outbox as outbox_service
 from app.services import ratelimit
 
 router = APIRouter(tags=["communication"])
@@ -223,7 +224,7 @@ async def send_message(
             "duplicate": is_duplicate,
         },
     )
-    await session.commit()
+    await outbox_service.commit_and_dispatch(session)
     return MessageSendResult(
         message=AgentMessagePublic.model_validate(message),
         is_duplicate=is_duplicate,
@@ -279,7 +280,7 @@ async def reply_to_message(
         request_id=ctx.request_id,
         data={"in_reply_to": str(incoming.id), "duplicate": is_duplicate},
     )
-    await session.commit()
+    await outbox_service.commit_and_dispatch(session)
     return MessageSendResult(
         message=AgentMessagePublic.model_validate(message),
         is_duplicate=is_duplicate,

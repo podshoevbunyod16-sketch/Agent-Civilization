@@ -39,55 +39,67 @@ export default function Conversations() {
     setLiveMessages([])
     setLive(false)
     if (!selectedId) return
-    const token = localStorage.getItem('ac.access_token')
-    if (!token) return
 
-    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const url = `${proto}://${window.location.host}/api/v1/ws/conversations/${selectedId}?token=${encodeURIComponent(token)}`
+    // Access-токен в query-строке больше не используется: браузер берёт
+    // одноразовый тикет (30 с), обычным запросом с заголовком Authorization.
     let socket: WebSocket | null = null
-    try {
-      socket = new WebSocket(url)
-      socket.onopen = () => setLive(true)
-      socket.onmessage = (event) => {
-        const payload = JSON.parse(event.data as string) as {
-          type: string
-          message_id?: string
-          kind?: string
-          status?: string
-          payload?: Record<string, unknown>
-          attempts?: number
-          event_type?: string
-        }
-        if (payload.type !== 'event' || !payload.message_id) return
-        setLiveMessages((current) => {
-          const next = current.filter((item) => item.id !== payload.message_id)
-          next.push({
-            id: payload.message_id!,
-            conversation_id: selectedId,
-            sender_agent_id: null,
-            recipient_agent_id: null,
-            kind: (payload.kind as AgentMessage['kind']) ?? 'event',
-            strategy: 'inbox',
-            status: (payload.status as AgentMessage['status']) ?? 'pending',
-            correlation_id: null,
-            payload: payload.payload ?? {},
-            response_payload: {},
-            error: null,
-            error_message: null,
-            attempts: payload.attempts ?? 0,
-            max_attempts: 0,
-            latency_ms: null,
-            delivered_at: null,
-            created_at: new Date().toISOString(),
-          })
-          return next
-        })
+    let cancelled = false
+    void (async () => {
+      let ticket: string
+      try {
+        ticket = (await api.wsTicket()).ticket
+      } catch {
+        return
       }
-      socket.onclose = () => setLive(false)
-    } catch {
-      setLive(false)
-    }
+      if (cancelled) return
+      const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
+      const url = `${proto}://${window.location.host}/api/v1/ws/conversations/${selectedId}?ticket=${encodeURIComponent(ticket)}`
+      try {
+        socket = new WebSocket(url)
+        socket.onopen = () => setLive(true)
+        socket.onmessage = (event) => {
+          const payload = JSON.parse(event.data as string) as {
+            type: string
+            message_id?: string
+            kind?: string
+            status?: string
+            payload?: Record<string, unknown>
+            attempts?: number
+            event_type?: string
+          }
+          if (payload.type !== 'event' || !payload.message_id) return
+          const messageId = payload.message_id
+          setLiveMessages((current) => {
+            const next = current.filter((item) => item.id !== messageId)
+            next.push({
+              id: messageId,
+              conversation_id: selectedId,
+              sender_agent_id: null,
+              recipient_agent_id: null,
+              kind: (payload.kind as AgentMessage['kind']) ?? 'event',
+              strategy: 'inbox',
+              status: (payload.status as AgentMessage['status']) ?? 'pending',
+              correlation_id: null,
+              payload: payload.payload ?? {},
+              response_payload: {},
+              error: null,
+              error_message: null,
+              attempts: payload.attempts ?? 0,
+              max_attempts: 0,
+              latency_ms: null,
+              delivered_at: null,
+              created_at: new Date().toISOString(),
+            })
+            return next
+          })
+        }
+        socket.onclose = () => setLive(false)
+      } catch {
+        setLive(false)
+      }
+    })()
     return () => {
+      cancelled = true
       socket?.close()
       setLive(false)
     }

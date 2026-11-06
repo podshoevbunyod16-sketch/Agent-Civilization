@@ -346,3 +346,104 @@ async def test_expired_signature_rejected(client, user):
     )
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "signature_expired"
+
+
+# ── A #3: WebSocket — тикет вместо access-токена в query ───────────────
+@pytest.mark.asyncio
+async def test_ws_ticket_is_short_lived_and_one_time(client, user):
+    from app.core.security import decode_token
+
+    response = await client.post("/api/v1/ws/ticket", headers=user.headers)
+    assert response.status_code == 200, response.text
+    ticket = response.json()["ticket"]
+    payload = decode_token(ticket, expected_type="ws")
+    # Тикет живёт секунды, а не часы, и помечен отдельным типом
+    assert payload["exp"] - payload["iat"] <= 60
+    assert payload["type"] == "ws"
+    # Тикет не работает как access-токен для HTTP API
+    http_use = await client.get(
+        "/api/v1/auth/me", headers={"Authorization": f"Bearer {ticket}"}
+    )
+    assert http_use.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_ws_rejects_access_token_in_query(client, user):
+    """Новые access-токены (со `sid`) в query-строке не принимаются."""
+    from starlette.testclient import TestClient
+    from starlette.websockets import WebSocketDisconnect
+
+    from app.main import app as fastapi_app
+
+    task = await _create_task(client, user)
+    with TestClient(fastapi_app) as sync_client:
+        with pytest.raises(WebSocketDisconnect) as exc:
+            with sync_client.websocket_connect(
+                f"/api/v1/ws/tasks/{task['id']}?token={user.access_token}"
+            ) as ws:
+                ws.receive_json()
+        assert exc.value.code == 4401
+        assert "ticket" in exc.value.reason
+
+
+@pytest.mark.asyncio
+async def test_ws_ticket_cannot_be_reused(client, user):
+    from starlette.testclient import TestClient
+    from starlette.websockets import WebSocketDisconnect
+
+    from app.main import app as fastapi_app
+
+    task = await _create_task(client, user)
+    ticket = (await client.post("/api/v1/ws/ticket", headers=user.headers)).json()["ticket"]
+
+    with TestClient(fastapi_app) as sync_client:
+        with sync_client.websocket_connect(
+            f"/api/v1/ws/tasks/{task['id']}?ticket={ticket}"
+        ) as ws:
+            assert ws.receive_json()["type"] == "snapshot"
+        # Повторная попытка с тем же тикетом отклоняется
+        with pytest.raises(WebSocketDisconnect) as exc:
+            with sync_client.websocket_connect(
+                f"/api/v1/ws/tasks/{task['id']}?ticket={ticket}"
+            ) as ws:
+                ws.receive_json()
+        assert exc.value.code == 4401
+
+
+@pytest.mark.asyncio
+async def test_ws_ticket_scoped_to_user(client, user, other_user):
+    """Тикет одного пользователя не даёт доступ к чужому заданию."""
+    from starlette.testclient import TestClient
+    from starlette.websockets import WebSocketDisconnect
+
+    from app.main import app as fastapi_app
+
+    task = await _create_task(client, user)
+    ticket = (
+        await client.post("/api/v1/ws/ticket", headers=other_user.headers)
+    ).json()["ticket"]
+    with TestClient(fastapi_app) as sync_client:
+        with pytest.raises(WebSocketDisconnect) as exc:
+            with sync_client.websocket_connect(
+                f"/api/v1/ws/tasks/{task['id']}?ticket={ticket}"
+            ) as ws:
+                ws.receive_json()
+        assert exc.value.code == 4403
+
+
+async def _create_task(client, user) -> dict:
+    """Минимальное задание для проверки WS-доступа."""
+    from tests.conftest import create_published_agent
+
+    agent = await create_published_agent(client, user)
+    response = await client.post(
+        "/api/v1/tasks",
+        json={
+            "agent_id": agent["id"],
+            "input": {"prompt": "ws test"},
+            "budget_units": 5,
+        },
+        headers=user.headers,
+    )
+    assert response.status_code in (200, 201), response.text
+    return response.json()

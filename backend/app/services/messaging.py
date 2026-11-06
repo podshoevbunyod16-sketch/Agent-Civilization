@@ -418,35 +418,49 @@ async def send_message(
     conversation.message_count += 1
     conversation.last_message_at = message.created_at or _now()
     await session.flush()
-    await _publish_message_event(message, "message.created")
+    await _publish_message_event(message, "message.created", session=session)
     return message, conversation, False
 
 
-async def _publish_message_event(message: AgentMessage, event_type: str) -> None:
+async def _publish_message_event(
+    message: AgentMessage, event_type: str, *, session: AsyncSession | None = None
+) -> None:
     """Уведомляет подписчиков WebSocket о новом сообщении/статусе.
 
-    Публикация не должна ломать доставку, поэтому все ошибки шины
-    проглатываются: статус в БД — источник истины.
+    Этап 10 (D): событие пишется в transactional outbox **внутри** той же
+    транзакции, что и изменение статуса сообщения. Раньше публикация шла
+    до commit — при откате подписчик получал событие о несуществующем
+    сообщении, а при падении после commit уведомление терялось навсегда.
+    Отправку выполняет воркер outbox (at-least-once, идемпотентно по event_id).
     """
-    try:
-        await event_bus.publish(
-            f"conversation:{message.conversation_id}",
-            {
-                "event_type": event_type,
-                "message_id": str(message.id),
-                "kind": message.kind.value,
-                "status": message.status.value,
-                "sender_agent_id": str(message.sender_agent_id)
-                if message.sender_agent_id
-                else None,
-                "recipient_agent_id": str(message.recipient_agent_id)
-                if message.recipient_agent_id
-                else None,
-                "payload": message.payload,
-                "attempts": message.attempts,
-                "created_at": message.created_at.isoformat() if message.created_at else None,
-            },
+    event = {
+        "event_type": event_type,
+        "message_id": str(message.id),
+        "kind": message.kind.value,
+        "status": message.status.value,
+        "sender_agent_id": str(message.sender_agent_id)
+        if message.sender_agent_id
+        else None,
+        "recipient_agent_id": str(message.recipient_agent_id)
+        if message.recipient_agent_id
+        else None,
+        "payload": message.payload,
+        "attempts": message.attempts,
+        "created_at": message.created_at.isoformat() if message.created_at else None,
+    }
+    topic = f"conversation:{message.conversation_id}"
+    if session is not None:
+        from app.services import outbox
+
+        await outbox.enqueue(
+            session,
+            topic=topic,
+            event=event,
+            event_id=f"message:{message.id}:{event_type}:{message.attempts}",
         )
+        return
+    try:
+        await event_bus.publish(topic, event)
     except Exception:  # pragma: no cover - шина событий не критична
         logger.warning("message_event_publish_failed", exc_info=True)
 
@@ -537,7 +551,7 @@ async def mark_delivered(
     message.error_message = None
     message.locked_until = None
     await session.flush()
-    await _publish_message_event(message, "message.delivered")
+    await _publish_message_event(message, "message.delivered", session=session)
     return message
 
 
@@ -559,7 +573,7 @@ async def mark_failed(
         message.next_attempt_at = _now() + timedelta(seconds=delay)
     message.locked_until = None
     await session.flush()
-    await _publish_message_event(message, "message.failed")
+    await _publish_message_event(message, "message.failed", session=session)
     return message
 
 
@@ -581,6 +595,7 @@ async def expire_messages(session: AsyncSession) -> int:
     for message in rows:
         message.status = MessageStatus.expired
         message.error = {"type": "Timeout", "message": "Истёк срок доставки"}
+        await _publish_message_event(message, "message.expired", session=session)
     await session.flush()
     return len(rows)
 

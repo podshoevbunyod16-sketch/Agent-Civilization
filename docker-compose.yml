@@ -84,6 +84,26 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # Отправитель outbox (этап 10, D). Stateless: можно масштабировать
+  # несколькими копиями — пачки забираются FOR UPDATE SKIP LOCKED.
+  outbox:
+    build: ./backend
+    command: ["python", "-m", "app.worker.outbox", "--interval", "1"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/agent_civilization
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-local-development-secret-key-change-in-production}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      LOG_LEVEL: INFO
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
 volumes:
   pgdata:
   redisdata:

@@ -277,6 +277,13 @@ async def authenticate_signed_request(
     seen = await redis_client.consume_once(
         f"{node_key}:{nonce}", settings.node_request_max_skew_seconds * 2
     )
+    if seen is None:
+        # Redis недоступен: пропустить запрос без anti-replay нельзя —
+        # подписанный запрос можно проиграть повторно. Узел повторит.
+        raise AuthenticationError(
+            "Проверка одноразовости недоступна, запрос отклонён",
+            code="replay_protection_unavailable",
+        )
     if not seen:
         raise AuthenticationError("Повторный nonce (replay)", code="replay_detected")
 

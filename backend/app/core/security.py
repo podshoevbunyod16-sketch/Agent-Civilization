@@ -19,7 +19,7 @@ from jwt.exceptions import InvalidTokenError
 from app.core.config import settings
 
 ALGORITHM = "HS256"
-TokenType = Literal["access", "refresh"]
+TokenType = Literal["access", "refresh", "ws"]
 
 # ── Пароли (PBKDF2-HMAC-SHA256, без внешних зависимостей) ──────────────
 _PBKDF2_ROUNDS = 260_000

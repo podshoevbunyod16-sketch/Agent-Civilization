@@ -34,6 +34,7 @@ from app.db.models.economy import (
     Transaction,
 )
 from app.db.models.ecosystem import CompatibilityCheck, Integration
+from app.db.models.events import EventOutbox, OutboxStatus
 from app.db.models.messaging import AgentMessage
 from app.db.models.node import InfrastructureNode, NodeStatus
 from app.db.models.task import Task, TaskStatus
@@ -156,7 +157,30 @@ async def collect_gauges(session: AsyncSession) -> dict[str, float]:
     ).all()
     verdicts = _counts(list(verdict_rows))
 
+    # Outbox (этап 10, D): недоставленные и «мёртвые» события видны в health.
+    outbox_rows = (
+        await session.execute(
+            select(EventOutbox.status, func.count()).group_by(EventOutbox.status)
+        )
+    ).all()
+    outbox_counts = _counts(list(outbox_rows))
+    outbox_oldest_pending = (
+        await session.execute(
+            select(func.min(EventOutbox.created_at)).where(
+                EventOutbox.status == OutboxStatus.pending
+            )
+        )
+    ).scalar_one_or_none()
+
     gauges: dict[str, float] = {
+        "outbox_pending": float(outbox_counts.get("pending", 0)),
+        "outbox_failed": float(outbox_counts.get("failed", 0)),
+        "outbox_published": float(outbox_counts.get("published", 0)),
+        "outbox_oldest_pending_age_seconds": (
+            round((now - outbox_oldest_pending).total_seconds(), 1)
+            if outbox_oldest_pending
+            else 0.0
+        ),
         "tasks_total": float(sum(tasks.values())),
         "tasks_queued": float(tasks.get("queued", 0)),
         "tasks_running": float(tasks.get("leased", 0) + tasks.get("running", 0)),
@@ -242,6 +266,29 @@ async def health_report(session: AsyncSession) -> dict[str, Any]:
                     "старейшее задание в очереди ждёт "
                     f"{gauges['queue_oldest_age_seconds']:.0f} с — не хватает узлов "
                     "или они не забирают работу"
+                ),
+            }
+        )
+    if gauges["outbox_failed"] > 0:
+        warnings.append(
+            {
+                "code": "outbox_dead_letter",
+                "severity": "high",
+                "message": (
+                    f"событий в dead-letter: {int(gauges['outbox_failed'])} — "
+                    "подписчики не получили уведомления, разберите причину"
+                ),
+            }
+        )
+    if gauges["outbox_oldest_pending_age_seconds"] > 120:
+        warnings.append(
+            {
+                "code": "outbox_stalled",
+                "severity": "medium",
+                "message": (
+                    "старейшее неотправленное событие ждёт "
+                    f"{gauges['outbox_oldest_pending_age_seconds']:.0f} с — "
+                    "проверьте, что воркер outbox запущен"
                 ),
             }
         )

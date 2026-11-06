@@ -964,3 +964,66 @@ pre.json {
   border-color: rgba(110, 231, 183, 0.4);
   background: rgba(110, 231, 183, 0.08);
 }
+
+/* ── Безопасность аккаунта (этап 10, B) ─────────────────────────────── */
+.notice {
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(110, 231, 183, 0.4);
+  background: rgba(110, 231, 183, 0.08);
+  color: var(--text, inherit);
+}
+
+.warn-text {
+  color: #fbbf24;
+}
+
+.code-block {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  background: rgba(255, 255, 255, 0.04);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.code-block.small {
+  font-size: 12px;
+}
+
+.list-plain {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  vertical-align: middle;
+}
+
+.table th {
+  font-weight: 600;
+  color: var(--muted, #94a3b8);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.btn-danger {
+  border-color: rgba(248, 113, 113, 0.5);
+  color: #f87171;
+}

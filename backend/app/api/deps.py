@@ -30,6 +30,9 @@ class RequestContext:
     request_id: str | None
     ip: str | None
     user_agent: str | None
+    # Идентификатор сессии (sid access-токена): нужен тикетам WebSocket и
+    # аудиту — действие привязывается к конкретному входу, а не к аккаунту.
+    session_id: str | None = None
 
 
 def _ip_in_trusted_networks(ip: str) -> bool:
@@ -80,6 +83,7 @@ async def get_request_context(request: Request) -> RequestContext:
         request_id=getattr(request.state, "request_id", None),
         ip=client_ip(request),
         user_agent=(request.headers.get("user-agent") or "")[:255] or None,
+        session_id=getattr(request.state, "session_id", None),
     )
 
 
