@@ -44,6 +44,17 @@ class Settings(BaseSettings):
     database_echo: bool = False
     redis_url: str = "redis://localhost:6379/0"
 
+    # ── Бэкапы и восстановление (этап 10, F) ─────────────────────────
+    # Каталог для снимков. В production монтируется отдельным томом:
+    # бэкап не должен лежать на том же диске, что и БД.
+    backup_dir: str = "./var/backups"
+    backup_keep_days: int = 14
+    # Автоматический бэкап: интервал фонового демона (0 — выключен).
+    backup_interval_seconds: int = 0
+    # Целевые показатели восстановления (заявляются только после замера).
+    rpo_target_seconds: int = 3600
+    rto_target_seconds: int = 1800
+
     # ── Сетевые ограничения (этап 10, A) ─────────────────────────────
     # Разрешать исходящие запросы во внутренние сети. Только для dev/test:
     # в production проверка конфигурации это запрещает.
@@ -223,6 +234,11 @@ class Settings(BaseSettings):
                 problems.append(
                     "PUBLIC_BASE_URL должен быть https-адресом: по ссылке из письма "
                     "передаётся одноразовый токен"
+                )
+            if not self.backup_dir:
+                problems.append(
+                    "BACKUP_DIR не задан: в production бэкапы обязательны "
+                    "(см. docs/runbooks/backup-restore.md)"
                 )
             if self.ssrf_allow_private:
                 problems.append(
