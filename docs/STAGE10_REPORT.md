@@ -25,6 +25,12 @@
 ## Доказательства
 
 ```
+CI (GitHub Actions, прогон 42212499670) — все 4 job зелёные:
+  Backend (lint + tests + migrations)              pass  6m38s
+  Security scans (SAST, deps, secrets, container)  pass  1m11s
+  Docker image builds                              pass  0m35s
+  Frontend (typecheck + build)                     pass  0m19s
+
 $ cd backend && pytest -p no:cacheprovider
 529 passed, 3 warnings in 490.61s          # было 376 на этапе 9
 
@@ -67,6 +73,14 @@ Chaos: `redis-down` (0 ответов 5xx, подписи узлов fail-closed
    заменено на uid/gid хоста и права 0o750/0o640/0o660.
 6. **`MetricsRegistry.observe_duration` падал с `KeyError`** при сбросе
    реестра — создаёт гистограмму вместо индексации.
+7. **`cryptography` и `pyotp` не были объявлены зависимостями** — код
+   этапов B/C импортировал их, но CI-установка их не ставила: job падал на
+   сборке тестов. Локально библиотеки стояли транзитивно, поэтому дефект
+   был невидим до первого прогона CI.
+8. **Три отказа CI-обвязки** (найдены при первом прогоне PR): неверный тег
+   `trivy-action`, `pip-audit --strict` падал на самом проекте вместо
+   зависимостей, trivy сканировал несобранный образ. Все три — про доверие
+   к «зелёному CI»: проверки не выполнялись, но job формально стартовал.
 
 ## Чего в этом PR нет (и почему)
 
