@@ -252,18 +252,32 @@ async def claim_tasks(
     lease_token = secrets.token_hex(24)
     lease_expires = _now() + timedelta(seconds=settings.worker_lease_seconds)
 
-    # Кандидаты: свои (preassigned) + свободные задания
+    # Кандидаты: свои (preassigned) + свободные задания.
+    #
+    # Просроченные по дедлайну отсекаются в SQL, а не только в цикле:
+    # раньше окно `limit * 4` могли целиком занять мёртвые задания, и выдача
+    # возвращала пустой список при живой очереди ниже (дефект найден
+    # chaos-тестом этапа 10). Закрывает их обслуживание —
+    # `expire_overdue_tasks`.
     stmt = (
         select(Task)
         .where(
             Task.status == TaskStatus.queued,
             (Task.node_id == node.id) | (Task.node_id.is_(None)),
+            (Task.deadline_at.is_(None)) | (Task.deadline_at >= _now()),
         )
         .order_by(Task.priority.desc(), Task.created_at.asc())
         .limit(limit * 4)
         .with_for_update(skip_locked=True)
     )
     candidates = list((await session.execute(stmt)).scalars().all())
+    if not candidates:
+        # Просроченные задания отфильтрованы выше, но остаться в `queued`
+        # они не должны: узел как раз сейчас показал, что очередь
+        # обслуживается. Закрываем их здесь, иначе статус «висит» до
+        # следующего прохода демона (тест `test_deadline_expiry_on_claim`
+        # проверяет именно этот переход).
+        await expire_overdue_tasks(session)
 
     assignments: list[TaskAssignment] = []
     for task in candidates:
@@ -452,7 +466,43 @@ async def complete_task(
 
     node.running_tasks = max(0, node.running_tasks - 1)
     await session.flush()
+    _observe_task_outcome(task, will_retry=will_retry)
     return task, will_retry
+
+
+def _observe_task_outcome(task: Task, *, will_retry: bool) -> None:
+    """Метрики выполнения задания (этап 10, G).
+
+    Считаем три вещи, по которым ставятся алерты:
+
+    * `task_duration_ms` — от создания до финального статуса (включая
+      ожидание в очереди). Растёт при нехватке узлов, а не только при
+      медленном агенте;
+    * `task_execution_ms` — от выдачи аренды до ответа узла: чистое время
+      исполнения, видно деградацию агента;
+    * `task_outcome` — succeeded/failed/retry: доля повторов и провалов.
+
+    Метки значений здесь нет: идентификатор задания в метку не попадает
+    (кардинальность), подробности — в `task_events` и логах.
+    """
+    from app.core.metrics import metrics
+
+    finished = task.finished_at or _now()
+    created = task.created_at or finished
+    metrics.observe_duration(
+        "task_duration_ms", max((finished - created).total_seconds() * 1000.0, 0.0)
+    )
+    started = task.started_at or task.updated_at or created
+    metrics.observe_duration(
+        "task_execution_ms", max((finished - started).total_seconds() * 1000.0, 0.0)
+    )
+    if will_retry:
+        outcome = "retry"
+    elif task.status == TaskStatus.succeeded:
+        outcome = "succeeded"
+    else:
+        outcome = "failed"
+    metrics.incr("task_outcome", outcome=outcome)
 
 
 async def _update_agent_counters(
@@ -509,6 +559,69 @@ async def expire_leases(session: AsyncSession) -> int:
             await _update_agent_counters(session, task.agent_id, success=False, task=task)
     await session.flush()
     return requeued
+
+
+async def expire_overdue_tasks(session: AsyncSession, *, limit: int = 500) -> int:
+    """Помечает просроченные задания, которые никто не забрал.
+
+    Дефект, найденный chaos-тестом этапа 10 (H): задание с истёкшим
+    `deadline_at` проверялось только в момент выдачи (`claim_tasks`). Если
+    подходящего узла нет вообще, задание остаётся в `queued` навсегда:
+    очередь «залипает», `queue_oldest_age_seconds` растёт, а отменить его
+    может только автор. Теперь просрочка закрывается обслуживанием —
+    независимо от того, есть ли узлы.
+
+    Семантика статуса: `expired` (не выполнено вовремя), а не `failed`
+    (агент отработал с ошибкой). Деньги не двигаются: бюджет задания на
+    эскроу возвращается вызывающей стороной через `release_task_budget`,
+    потому что списаний по нему не было.
+    """
+    overdue = list(
+        (
+            await session.execute(
+                select(Task)
+                .where(
+                    Task.status == TaskStatus.queued,
+                    Task.deadline_at.is_not(None),
+                    Task.deadline_at < _now(),
+                )
+                .order_by(Task.deadline_at.asc())
+                .limit(limit)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    closed = 0
+    for task in overdue:
+        task.status = TaskStatus.expired
+        task.finished_at = _now()
+        task.lease_token = None
+        task.lease_expires_at = None
+        task.error = {
+            "type": "DeadlineExpired",
+            "message": "Дедлайн истёк до того, как задание забрал узел",
+        }
+        await _event(
+            session,
+            task,
+            "task.expired",
+            actor="maintenance",
+            message="Дедлайн истёк в очереди",
+        )
+        if task.budget_units:
+            from app.services import economy as economy_service
+
+            await economy_service.release_task_budget(
+                session, task, reason="дедлайн истёк, задание не исполнялось"
+            )
+        closed += 1
+    if closed:
+        await session.flush()
+        from app.core.metrics import metrics
+
+        metrics.incr("task_expired_in_queue", closed)
+    return closed
 
 
 async def task_stats(session: AsyncSession) -> dict[str, Any]:

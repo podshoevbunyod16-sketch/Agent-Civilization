@@ -35,6 +35,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import db_metrics
 from app.core.config import settings
 from app.core.logging import configure_logging
 from app.core.metrics import metrics
@@ -52,6 +53,9 @@ async def run_once(
     """Один проход обслуживания. Идемпотентен: повтор ничего не ломает."""
     started = time.perf_counter()
     requeued = await gateway.expire_leases(session)
+    # Просроченные в очереди задания: без этого шага они висят вечно, если
+    # подходящих узлов нет (дефект найден chaos-тестом этапа 10).
+    overdue_closed = await gateway.expire_overdue_tasks(session)
     offline = await node_service.mark_stale_nodes_offline(
         session, stale_after_seconds=stale_after_seconds
     )
@@ -66,14 +70,18 @@ async def run_once(
         warnings = report["warnings"]
 
     duration_ms = round((time.perf_counter() - started) * 1000, 2)
-    if requeued or offline or expired:
+    if requeued or offline or expired or overdue_closed:
         metrics.incr("maintenance.runs", outcome="changed")
     else:
         metrics.incr("maintenance.runs", outcome="noop")
     metrics.observe_duration("maintenance", duration_ms)
+    # Отметка «цикл жив»: по ней `/ops/health` и алерт видят, что демон не
+    # встал, а не только что БД отвечает (этап 10, G).
+    db_metrics.heartbeat("maintenance")
 
     outcome = {
         "requeued_tasks": requeued,
+        "overdue_closed": overdue_closed,
         "nodes_offline": offline,
         "expired_messages": expired,
         "duration_ms": duration_ms,
@@ -81,7 +89,7 @@ async def run_once(
         "queue_depth": gauges.get("tasks_queued"),
         "nodes_online": gauges.get("nodes_online"),
     }
-    if requeued or offline or expired:
+    if requeued or offline or expired or overdue_closed:
         logger.info("maintenance_pass", extra=outcome)
     if warnings:
         logger.warning(
@@ -116,6 +124,7 @@ class MaintenanceWorker:
                     await run_once(session, stale_after_seconds=self.stale_after_seconds)
                 self.passes += 1
             except Exception as exc:  # БД недоступна — ждём и пробуем снова
+                metrics.incr("worker_pass_failed", outcome="maintenance")
                 logger.error("maintenance_failed", extra={"error": str(exc)[:300]})
             elapsed = time.perf_counter() - started
             delay = max(0.5, self.interval - elapsed)
