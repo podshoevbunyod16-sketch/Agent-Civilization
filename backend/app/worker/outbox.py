@@ -22,8 +22,10 @@ import contextlib
 import signal
 import time
 
+from app.core import db_metrics
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
+from app.core.metrics import metrics
 from app.db.session import dispose_engine, get_session_factory
 from app.services import outbox
 
@@ -47,7 +49,10 @@ async def run_once(*, limit: int = 100, purge: bool = False) -> dict[str, int]:
             result["purged"] = await outbox.purge_published(session)
         # Коммитим: события, отправленные в этом проходе, помечаются published
         await session.commit()
-        return result
+    # После коммита: событие считается отправленным, только когда строка
+    # помечена published (at-least-once, ADR 0013).
+    db_metrics.heartbeat("outbox")
+    return result
 
 
 async def main(interval: float = 1.0, purge_every: int = 300) -> None:
@@ -67,6 +72,7 @@ async def main(interval: float = 1.0, purge_every: int = 300) -> None:
             if result["claimed"] or result["reclaimed"]:
                 logger.info("outbox_pass", extra=result)
         except Exception as exc:  # pragma: no cover - инфраструктурный сбой
+            metrics.incr("worker_pass_failed", outcome="outbox")
             logger.warning("outbox_pass_failed", extra={"error": str(exc)})
         ticks += 1
         elapsed = time.perf_counter() - started

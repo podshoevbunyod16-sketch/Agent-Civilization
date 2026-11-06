@@ -486,3 +486,24 @@ async def test_worker_counts_terminal_failures():
     outcome = await worker.run_once()
     assert outcome == {"processed": 1, "delivered": 0, "failed": 1, "retried": 0}
     assert worker.failed == 1
+
+
+async def test_mcp_errors_are_counted_by_type():
+    """Этап 10, G: отказы MCP видны в метриках по типу, без токена в метке."""
+    from app.core.metrics import metrics
+
+    before = dict(metrics.events)
+    dispatcher = MessageDispatcher()
+    # MCP-сервер не зарегистрирован — отказ до сетевого вызова
+    outcome = await dispatcher.deliver(
+        {"strategy": "mcp", "payload": {"tool": "x"}}, {"mcp": None}
+    )
+    assert outcome["success"] is False
+
+    def delta(outcome_name: str) -> int:
+        return metrics.events[("mcp_error", outcome_name)] - before.get(
+            ("mcp_error", outcome_name), 0
+        )
+
+    assert delta("McpMissing") == 1
+    assert metrics.durations["mcp_tool_call"].count >= 1

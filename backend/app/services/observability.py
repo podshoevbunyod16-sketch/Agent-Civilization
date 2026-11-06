@@ -25,6 +25,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import db_metrics
 from app.core.metrics import metrics
 from app.db.models.economy import (
     Account,
@@ -211,6 +212,7 @@ async def collect_gauges(session: AsyncSession) -> dict[str, float]:
         "transactions_total": float(
             (await session.execute(select(func.count()).select_from(Transaction))).scalar_one()
         ),
+        **db_metrics.worker_health_snapshot(),
         "treasury_accounts": float(
             (
                 await session.execute(
@@ -289,6 +291,19 @@ async def health_report(session: AsyncSession) -> dict[str, Any]:
                     "старейшее неотправленное событие ждёт "
                     f"{gauges['outbox_oldest_pending_age_seconds']:.0f} с — "
                     "проверьте, что воркер outbox запущен"
+                ),
+            }
+        )
+    stalled_workers = db_metrics.stale_workers()
+    if stalled_workers:
+        warnings.append(
+            {
+                "code": "worker_stalled",
+                "severity": "high",
+                "message": (
+                    "воркеры не просыпались > 5 мин: "
+                    + ", ".join(stalled_workers)
+                    + " — проверьте супервизор процессов"
                 ),
             }
         )

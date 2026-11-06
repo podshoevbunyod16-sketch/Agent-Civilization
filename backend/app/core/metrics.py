@@ -93,7 +93,14 @@ class MetricsRegistry:
 
     def observe_duration(self, name: str, milliseconds: float) -> None:
         with self._lock:
-            self.durations[name].observe(milliseconds)
+            # `defaultdict` здесь не работает: ключ может быть удалён во время
+            # работы (тесты, сброс реестра), и обращение по индексу падало бы
+            # с KeyError прямо в пути обработки результата задания.
+            histogram = self.durations.get(name)
+            if histogram is None:
+                histogram = _Histogram()
+                self.durations[name] = histogram
+            histogram.observe(milliseconds)
 
     def set_gauges(self, values: dict[str, float]) -> None:
         with self._lock:
