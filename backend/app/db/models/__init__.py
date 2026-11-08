@@ -1,6 +1,7 @@
 """ORM-модели. Импорт этого модуля регистрирует все таблицы в metadata."""
 
 from app.db.models.agent import Agent, AgentCapability, AgentVersion
+from app.db.models.api_key import ApiKey
 from app.db.models.audit import AuditLog
 from app.db.models.capability import Capability
 from app.db.models.economy import (
@@ -71,6 +72,7 @@ __all__ = [
     "Agent",
     "AgentCapability",
     "AgentVersion",
+    "ApiKey",
     "AuditLog",
     "AgentMessage",
     "Capability",

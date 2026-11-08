@@ -13,13 +13,13 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     strictPort: false,
-    // Разрешаем любые host-заголовки: приложение открывается через
-    // прокси-домен превью, а не через localhost.
-    allowedHosts: true,
+    // Ограничиваем Host локальной разработкой и доменом браузерного превью.
+    // Разрешать любой Host опасно: это открывает возможность DNS rebinding.
+    allowedHosts: ['.e2b.app'],
     proxy: {
       '/api': { target: API_TARGET, changeOrigin: true, ws: true },
     },
   },
-  preview: { host: '0.0.0.0', allowedHosts: true },
+  preview: { host: '0.0.0.0', allowedHosts: ['.e2b.app'] },
   build: { outDir: 'dist', sourcemap: false },
 })

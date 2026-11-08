@@ -16,6 +16,7 @@ import Economy from '@/pages/Economy'
 import Developer from '@/pages/Developer'
 import Ops from '@/pages/Ops'
 import McpSetup from '@/pages/McpSetup'
+import ApiKeys from '@/pages/ApiKeys'
 
 const NAV_GROUPS = [
   {
@@ -23,12 +24,12 @@ const NAV_GROUPS = [
     links: [
       { to: '/', label: 'Главная', icon: '⌂', end: true },
       { to: '/agents', label: 'Каталог агентов', icon: '◎' },
-      { to: '/tasks', label: 'Задания', icon: '☷' },
     ],
   },
   {
     title: 'Работа агентов',
     links: [
+      { to: '/tasks', label: 'Задания', icon: '☷' },
       { to: '/graph', label: 'Связи агентов', icon: '⋈' },
       { to: '/conversations', label: 'Диалоги', icon: '↔' },
       { to: '/plans', label: 'Планы', icon: '⤴' },
@@ -102,7 +103,41 @@ export default function App() {
         </div>
 
         <nav className="nav" aria-label="Главная навигация">
-          {NAV_GROUPS.map((group) => (
+          <div className="nav-group" key={NAV_GROUPS[0].title}>
+            <div className="nav-section">{NAV_GROUPS[0].title}</div>
+            {NAV_GROUPS[0].links.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={'end' in item ? item.end : false}
+                className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
+              >
+                <span className="icon" aria-hidden="true">{item.icon}</span>
+                <span className="nav-label">{item.label}</span>
+              </NavLink>
+            ))}
+          </div>
+
+          <div className="sidebar-account">
+            {user ? (
+              <div className="card account-card">
+                <div className="brand-sub">Вы вошли как</div>
+                <div className="account-name">{user.display_name}</div>
+                <div className="faint account-email">{user.email}</div>
+                <div className="row between account-actions">
+                  <span className="badge">{user.role}</span>
+                  <button className="btn btn-sm" onClick={() => void logout()}>Выйти</button>
+                </div>
+                <NavLink to="/settings/api-keys" className="account-key-link">Ключи API и MCP →</NavLink>
+              </div>
+            ) : (
+              <NavLink to="/login" state={{ from: location.pathname }} className="btn btn-primary login-link">
+                Войти или создать аккаунт
+              </NavLink>
+            )}
+          </div>
+
+          {NAV_GROUPS.slice(1).map((group) => (
             <div className="nav-group" key={group.title}>
               <div className="nav-section">{group.title}</div>
               {group.links.map((item) => (
@@ -113,31 +148,13 @@ export default function App() {
                   className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
                 >
                   <span className="icon" aria-hidden="true">{item.icon}</span>
-                  {item.label}
+                  <span className="nav-label">{item.label}</span>
                 </NavLink>
               ))}
             </div>
           ))}
         </nav>
-
-        <div className="sidebar-account">
-          {user ? (
-            <div className="card account-card">
-              <div className="brand-sub">Вы вошли как</div>
-              <div className="account-name">{user.display_name}</div>
-              <div className="faint account-email">{user.email}</div>
-              <div className="row between account-actions">
-                <span className="badge">{user.role}</span>
-                <button className="btn btn-sm" onClick={() => void logout()}>Выйти</button>
-              </div>
-            </div>
-          ) : (
-            <NavLink to="/login" state={{ from: location.pathname }} className="btn btn-primary login-link">
-              Войти как разработчик
-            </NavLink>
-          )}
-          <div className="faint sidebar-note">Все разделы проекта находятся здесь. Нажмите ☰, чтобы открыть меню.</div>
-        </div>
+        <div className="faint sidebar-note">Все разделы здесь. Нажмите × или вне меню, чтобы закрыть его.</div>
       </aside>
 
       <main className="main">
@@ -154,6 +171,7 @@ export default function App() {
           <Route path="/developer" element={<Developer />} />
           <Route path="/developer/agents" element={<DeveloperPanel />} />
           <Route path="/mcp" element={<McpSetup />} />
+          <Route path="/settings/api-keys" element={<ApiKeys />} />
           <Route path="/ops" element={<Ops />} />
           <Route path="/graph" element={<GraphPage />} />
           <Route path="/tasks" element={<TaskCenter />} />

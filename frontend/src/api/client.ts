@@ -905,6 +905,19 @@ export interface TokenPair {
   user: UserPublic
 }
 
+export interface ApiKeyInfo {
+  id: string
+  name: string
+  key_prefix: string
+  created_at: string
+  expires_at: string
+  revoked_at: string | null
+}
+
+export interface ApiKeyCreated extends ApiKeyInfo {
+  api_key: string
+}
+
 export const api = {
   async register(email: string, password: string, displayName: string): Promise<TokenPair> {
     const data = await request<TokenPair>('/auth/register', {
@@ -942,6 +955,22 @@ export const api = {
 
   myAgents(signal?: AbortSignal): Promise<AgentListItem[]> {
     return request<AgentListItem[]>('/auth/me/agents', { auth: true, signal })
+  },
+
+  apiKeys(signal?: AbortSignal): Promise<ApiKeyInfo[]> {
+    return request<ApiKeyInfo[]>('/auth/api-keys', { auth: true, signal })
+  },
+
+  createApiKey(name: string, expiresInDays = 90): Promise<ApiKeyCreated> {
+    return request<ApiKeyCreated>('/auth/api-keys', {
+      method: 'POST',
+      auth: true,
+      body: { name, expires_in_days: expiresInDays },
+    })
+  },
+
+  revokeApiKey(id: string): Promise<ApiKeyInfo> {
+    return request<ApiKeyInfo>(`/auth/api-keys/${id}`, { method: 'DELETE', auth: true })
   },
 
   // ── Agents ──────────────────────────────────────────────────────────

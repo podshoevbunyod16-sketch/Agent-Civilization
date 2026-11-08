@@ -122,3 +122,21 @@ async def test_mcp_workflow_tools_create_and_read_plan(client, user):
     )
     assert checked.status_code == 200, checked.text
     assert checked.json()["result"]["structuredContent"]["plan_id"] == plan_id
+
+
+async def test_mcp_accepts_revocable_api_key(client, user):
+    created = await client.post(
+        "/api/v1/auth/api-keys",
+        headers=user.headers,
+        json={"name": "MCP test"},
+    )
+    assert created.status_code == 201, created.text
+    api_key = created.json()["api_key"]
+
+    response = await client.post(
+        "/api/v1/mcp",
+        headers={"Authorization": f"Bearer {api_key}"},
+        json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+    )
+    assert response.status_code == 200, response.text
+    assert len(response.json()["result"]["tools"]) == 5
