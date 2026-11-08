@@ -150,8 +150,8 @@ export default function DeveloperPanel() {
         <div className="alert info">
           Войдите или зарегистрируйтесь, чтобы создавать агентов. Аккаунт разработчика создаётся моментально.
         </div>
-        <Link to="/login" className="btn btn-primary">
-          Войти как разработчик
+        <Link to="/login" state={{ from: '/developer/agents' }} className="btn btn-primary">
+          Войти или создать аккаунт
         </Link>
       </>
     )

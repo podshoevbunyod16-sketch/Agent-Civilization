@@ -10,6 +10,7 @@ from app.api.v1.endpoints import (
     ecosystem,
     health,
     internal,
+    mcp,
     nodes,
     ops,
     orchestration,
@@ -27,6 +28,7 @@ api_router.include_router(nodes.self_router)
 api_router.include_router(nodes.router)
 api_router.include_router(tasks.router)
 api_router.include_router(communication.router)
+api_router.include_router(mcp.router)
 api_router.include_router(orchestration.router)
 api_router.include_router(trust.router)
 api_router.include_router(economy.router)

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { ApiError, api, type InfrastructureNode, type NodeCredentials } from '@/api/client'
 import { Badge, Empty, ErrorBox, Loader, PageHead, Stat } from '@/components/ui'
 import { useAsync, usePolling } from '@/lib/useAsync'
@@ -46,6 +47,9 @@ export default function Infrastructure() {
         <div className="alert info">
           Раздел доступен после входа. Узлы принадлежат участникам: каждый видит и обслуживает свои серверы.
         </div>
+        <Link to="/login" state={{ from: '/infrastructure' }} className="btn btn-primary">
+          Войти или создать аккаунт
+        </Link>
       </>
     )
   }
@@ -121,11 +125,11 @@ export default function Infrastructure() {
             </button>
           </div>
           <p className="muted" style={{ fontSize: 13 }}>
-            {credentials.warning}. Запустите worker на сервере узла:
+            {credentials.warning}. На сервере узла установите проект (Python 3.11+) и запустите команду из корня репозитория:
           </p>
-          <pre className="json">{`AC_NODE_KEY=${credentials.node_key}
-AC_NODE_SECRET=${credentials.node_secret}
-python -m app.worker.node_worker --api-url <адрес API>`}</pre>
+          <pre className="json">{`python -m pip install -e backend
+AC_NODE_KEY=${credentials.node_key} AC_NODE_SECRET=${credentials.node_secret} \\
+python -m app.worker.node_worker --api-url https://<адрес-вашего-API>`}</pre>
         </div>
       ) : null}
 
@@ -133,7 +137,7 @@ python -m app.worker.node_worker --api-url <адрес API>`}</pre>
         <div className="card" style={{ marginBottom: 18 }}>
           <div className="card-head">
             <h2 className="card-title">Новый узел</h2>
-            <span className="card-sub">Лимиты узла ограничивают задачи сверху</span>
+            <span className="card-sub">Достаточно указать имя. Остальные настройки можно не менять.</span>
           </div>
           <div className="form-grid">
             <div className="field">
@@ -142,9 +146,14 @@ python -m app.worker.node_worker --api-url <адрес API>`}</pre>
                 className="input"
                 value={form.name}
                 onChange={(event) => setForm({ ...form, name: event.target.value })}
-                placeholder="khujand-node-1"
+                placeholder="Мой сервер"
+                required
               />
             </div>
+          </div>
+          <details className="advanced-node-settings">
+            <summary>Дополнительные настройки (обычно менять не нужно)</summary>
+            <div className="form-grid" style={{ marginTop: 12 }}>
             <div className="field">
               <label>Тип</label>
               <select
@@ -227,9 +236,8 @@ python -m app.worker.node_worker --api-url <адрес API>`}</pre>
                 onChange={(event) => setForm({ ...form, capabilities: event.target.value })}
               />
             </div>
-          </div>
-          <div className="row between" style={{ marginTop: 16 }}>
-            <label className="row" style={{ fontSize: 13 }}>
+            </div>
+            <label className="row" style={{ fontSize: 13, marginTop: 12 }}>
               <input
                 type="checkbox"
                 checked={form.allow_network}
@@ -237,6 +245,9 @@ python -m app.worker.node_worker --api-url <адрес API>`}</pre>
               />
               Разрешить сетевой доступ задачам
             </label>
+          </details>
+          <div className="row between" style={{ marginTop: 16 }}>
+            <span className="faint small">Сеть выключена по умолчанию — безопаснее для старта.</span>
             <button className="btn btn-primary" disabled={busy || !form.name} onClick={() => void register()}>
               {busy ? 'Регистрация…' : 'Зарегистрировать'}
             </button>

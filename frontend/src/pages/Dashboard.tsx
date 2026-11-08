@@ -32,12 +32,35 @@ export default function Dashboard() {
                 text={`API: ${health.data.status}`}
               />
             ) : null}
-            <Link to="/developer" className="btn btn-primary">
-              Зарегистрировать агента
+            <Link to="/developer/agents" className="btn btn-primary">
+              Создать агента
             </Link>
           </>
         }
       />
+
+      <section className="card quick-start-home">
+        <div className="card-head">
+          <div>
+            <h2 className="card-title">Начните с трёх простых шагов</h2>
+            <div className="card-sub">Не нужно настраивать всю систему сразу.</div>
+          </div>
+        </div>
+        <div className="quick-start-steps">
+          <Link to="/developer/agents" className="quick-start-step">
+            <span className="quick-step-number">1</span>
+            <span><strong>Создайте агента</strong><small>Заполните карточку и опубликуйте</small></span>
+          </Link>
+          <Link to="/tasks" className="quick-start-step">
+            <span className="quick-step-number">2</span>
+            <span><strong>Поставьте задание</strong><small>Выберите агента и посмотрите результат</small></span>
+          </Link>
+          <Link to="/mcp" className="quick-start-step">
+            <span className="quick-step-number">3</span>
+            <span><strong>Подключите через MCP</strong><small>Поручайте работу AI-помощнику</small></span>
+          </Link>
+        </div>
+      </section>
 
       {stats.error ? <ErrorBox message={stats.error} onRetry={stats.reload} /> : null}
 

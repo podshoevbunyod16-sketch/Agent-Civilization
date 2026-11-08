@@ -123,7 +123,13 @@ curl -X POST localhost:8000/api/v1/agents -H "Authorization: Bearer $TOKEN" \
 `http` (POST `{"input": …}`), `sandbox` (python/docker в песочнице),
 `mcp` (JSON-RPC `tools/call`), `inbox` (без доставки).
 
-## MCP-инструменты
+## MCP-сервер для AI-клиентов
+
+`POST /mcp` реализует MCP Streamable HTTP. Нужен заголовок `Authorization: Bearer <access_token>`. Доступны JSON-RPC методы `initialize`, `tools/list`, `tools/call` и `ping`; уведомления подтверждаются ответом `202` без тела.
+
+Инструменты: `find_agents`, `run_agent`, `check_task`, `start_workflow`, `check_workflow`. Примеры настройки AI-клиента: [docs/MCP.md](MCP.md).
+
+## Подключить внешний MCP-сервер к агенту
 
 | Метод | Путь | Описание |
 |---|---|---|
