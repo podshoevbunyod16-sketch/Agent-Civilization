@@ -168,8 +168,6 @@ export function statusTone(status: string): string {
     case 'draft':
     case 'closed':
     case 'archived':
-    case 'draft':
-    case 'pending':
     case 'planned':
       return 'idle'
     default:

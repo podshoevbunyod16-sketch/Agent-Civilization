@@ -13,7 +13,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml ./
-RUN pip install --upgrade pip && pip install ".[dev]"
+RUN pip install --upgrade pip setuptools && pip install ".[dev]"
 
 COPY alembic.ini ./
 COPY alembic ./alembic

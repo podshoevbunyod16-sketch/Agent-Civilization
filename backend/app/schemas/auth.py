@@ -82,6 +82,36 @@ class AccessToken(BaseModel):
     expires_in: int
 
 
+class ApiKeyCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    expires_in_days: int = Field(default=90, ge=1, le=365)
+
+    @field_validator("name")
+    @classmethod
+    def _clean_name(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 2:
+            raise ValueError("Название ключа должно содержать минимум 2 символа")
+        return value
+
+
+class ApiKeyPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    key_prefix: str
+    created_at: datetime
+    expires_at: datetime
+    revoked_at: datetime | None
+
+
+class ApiKeyCreated(ApiKeyPublic):
+    """Full secret is returned once, only in the create response."""
+
+    api_key: str
+
+
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(min_length=1)
     new_password: str = Field(min_length=8, max_length=128)

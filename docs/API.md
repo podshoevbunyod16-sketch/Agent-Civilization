@@ -21,6 +21,8 @@
 | GET | `/auth/me` | профиль |
 | GET | `/auth/me/agents` | мои агенты, включая черновики |
 | POST | `/auth/change-password` | смена пароля, отзывает сессии |
+| POST / GET | `/auth/api-keys` | создать ключ (секрет возвращается один раз) / список своих ключей без секретов |
+| DELETE | `/auth/api-keys/{id}` | отозвать свой API-ключ |
 
 ```bash
 curl -X POST localhost:8000/api/v1/auth/register \

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter, Depends, Request, status
 
 from app.api.deps import Ctx, CurrentUser, DbSession, rate_limit_auth
@@ -7,6 +9,9 @@ from app.core.config import settings
 from app.schemas.agent import AgentListItem
 from app.schemas.auth import (
     AccessToken,
+    ApiKeyCreate,
+    ApiKeyCreated,
+    ApiKeyPublic,
     ChangePasswordRequest,
     LoginRequest,
     LogoutRequest,
@@ -119,9 +124,7 @@ async def refresh_token(data: RefreshRequest, session: DbSession, ctx: Ctx) -> T
 
 
 @router.post("/logout", response_model=Message, summary="Выход (отзыв сессии)")
-async def logout(
-    data: LogoutRequest, session: DbSession, user: CurrentUser, ctx: Ctx
-) -> Message:
+async def logout(data: LogoutRequest, session: DbSession, user: CurrentUser, ctx: Ctx) -> Message:
     if data.all_sessions:
         count = await auth_service.revoke_all_sessions(session, user.id)
         detail = f"Отозвано сессий: {count}"
@@ -185,3 +188,76 @@ async def change_password(
     )
     await session.commit()
     return AccessToken(access_token=access, expires_in=settings.access_token_ttl_seconds)
+
+
+@router.post(
+    "/api-keys",
+    response_model=ApiKeyCreated,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit_auth)],
+    summary="Создать долгоживущий API-ключ (секрет показывается один раз)",
+)
+async def create_api_key(
+    data: ApiKeyCreate,
+    session: DbSession,
+    user: CurrentUser,
+    ctx: Ctx,
+) -> ApiKeyCreated:
+    from app.services import api_keys as api_key_service
+
+    record, secret = await api_key_service.create_api_key(session, user=user, data=data)
+    await audit_service.record(
+        session,
+        action="api_key.create",
+        target_type="api_key",
+        target_id=record.id,
+        actor_id=user.id,
+        ip_address=ctx.ip,
+        user_agent=ctx.user_agent,
+        request_id=ctx.request_id,
+        data={"name": record.name, "key_prefix": record.key_prefix},
+    )
+    await session.commit()
+    return ApiKeyCreated(**ApiKeyPublic.model_validate(record).model_dump(), api_key=secret)
+
+
+@router.get(
+    "/api-keys",
+    response_model=list[ApiKeyPublic],
+    summary="Мои API-ключи (без секретов)",
+)
+async def list_api_keys(session: DbSession, user: CurrentUser) -> list[ApiKeyPublic]:
+    from app.services import api_keys as api_key_service
+
+    rows = await api_key_service.list_api_keys(session, user_id=user.id)
+    return [ApiKeyPublic.model_validate(row) for row in rows]
+
+
+@router.delete(
+    "/api-keys/{key_id}",
+    response_model=ApiKeyPublic,
+    dependencies=[Depends(rate_limit_auth)],
+    summary="Отозвать API-ключ",
+)
+async def revoke_api_key(
+    key_id: uuid.UUID,
+    session: DbSession,
+    user: CurrentUser,
+    ctx: Ctx,
+) -> ApiKeyPublic:
+    from app.services import api_keys as api_key_service
+
+    record = await api_key_service.revoke_api_key(session, key_id=key_id, user_id=user.id)
+    await audit_service.record(
+        session,
+        action="api_key.revoke",
+        target_type="api_key",
+        target_id=record.id,
+        actor_id=user.id,
+        ip_address=ctx.ip,
+        user_agent=ctx.user_agent,
+        request_id=ctx.request_id,
+        data={"name": record.name, "key_prefix": record.key_prefix},
+    )
+    await session.commit()
+    return ApiKeyPublic.model_validate(record)

@@ -41,10 +41,12 @@ export default function McpSetup() {
           <pre className="json mcp-config">{`{
   "url": "${endpoint}",
   "headers": {
-    "Authorization": "Bearer ВАШ_ACCESS_TOKEN"
+    "Authorization": "Bearer ВАШ_API_КЛЮЧ"
   }
 }`}</pre>
-          <div className="alert info">Получите access token входом через API: POST /api/v1/auth/login. Токен — это пароль к вашему аккаунту: храните его только в настройках клиента, никому не отправляйте и не добавляйте в Git.</div>
+          <div className="alert info">
+            Создайте отдельный ключ в разделе <Link to="/settings/api-keys">API-ключи</Link> и вставьте его вместо примера выше. Секрет показывается один раз: храните его только в настройках MCP-клиента, никому не отправляйте и не добавляйте в Git.
+          </div>
         </section>
 
         <section className="card">

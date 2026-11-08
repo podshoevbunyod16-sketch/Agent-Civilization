@@ -62,6 +62,10 @@ async def get_current_user_optional(
 ) -> User | None:
     if credentials is None:
         return None
+    # Long-lived API keys are deliberately not treated as account sessions on
+    # optional-auth endpoints; they are restricted to the MCP route below.
+    if credentials.credentials.startswith("ac_live_"):
+        return None
     try:
         payload = decode_token(credentials.credentials, expected_type="access")
         user_id = uuid.UUID(payload["sub"])
@@ -74,11 +78,27 @@ async def get_current_user_optional(
 
 
 async def get_current_user(
+    request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     session: DbSession,
 ) -> User:
     if credentials is None:
         raise AuthenticationError("Требуется авторизация", code="missing_token")
+    if credentials.credentials.startswith("ac_live_"):
+        from app.services.api_keys import authenticate_api_key
+
+        user = await authenticate_api_key(session, credentials.credentials)
+        if user is None:
+            raise AuthenticationError(
+                "API-ключ недействителен, истёк или отозван", code="invalid_api_key"
+            )
+        mcp_path = f"{settings.api_prefix.rstrip('/')}/mcp"
+        if request.method != "POST" or request.url.path != mcp_path:
+            raise PermissionDeniedError(
+                "API-ключи разрешены только для подключения к MCP",
+                code="api_key_scope",
+            )
+        return user
     try:
         payload = decode_token(credentials.credentials, expected_type="access")
         user_id = uuid.UUID(payload["sub"])
@@ -148,7 +168,7 @@ async def get_signed_node(
         body = b""
     path = request.url.path
     if settings.api_prefix and path.startswith(settings.api_prefix):
-        path = path[len(settings.api_prefix):] or "/"
+        path = path[len(settings.api_prefix) :] or "/"
     return await node_service.authenticate_signed_request(
         session,
         node_key=x_node_key,
@@ -168,9 +188,7 @@ class Pagination:
     def __init__(
         self,
         page: int = Query(1, ge=1, le=100_000),
-        page_size: int = Query(
-            None, ge=1, le=settings.registry_page_size_max, alias="page_size"
-        ),
+        page_size: int = Query(None, ge=1, le=settings.registry_page_size_max, alias="page_size"),
     ) -> None:
         self.page = page
         self.page_size = page_size or settings.registry_page_size_default
