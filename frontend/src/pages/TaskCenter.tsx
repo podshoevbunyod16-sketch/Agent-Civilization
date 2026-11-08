@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ApiError, api, type TaskEvent } from '@/api/client'
 import { Badge, Empty, ErrorBox, Loader, PageHead } from '@/components/ui'
 import { useAsync, usePolling } from '@/lib/useAsync'
@@ -17,8 +17,19 @@ const STATUS_FILTERS = [
 
 export default function TaskCenter() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const { user } = useAuth()
   const [status, setStatus] = useState('')
+  const [selectedAgent, setSelectedAgent] = useState('')
+  const [inputText, setInputText] = useState('Привет!')
+  const [inputJson, setInputJson] = useState('{\n  "text": "Привет!"\n}')
+  const [advancedInput, setAdvancedInput] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const publishedAgents = useAsync(
+    (signal) => api.agents({ status: 'published', page_size: 100, sort: 'reputation' }, signal),
+    [],
+  )
   const [page, setPage] = useState(1)
 
   const tasks = useAsync(
@@ -124,6 +135,37 @@ export default function TaskCenter() {
     }
   }
 
+  async function createTask(event: React.FormEvent) {
+    event.preventDefault()
+    setSubmitError(null)
+    let input: unknown = { text: inputText }
+    if (!inputText.trim() && !advancedInput) {
+      setSubmitError('Напишите, что нужно передать агенту.')
+      return
+    }
+    if (advancedInput) {
+      try {
+        input = JSON.parse(inputJson)
+      } catch {
+        setSubmitError('Проверьте JSON. Пример: {"text":"Привет"}')
+        return
+      }
+      if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        setSubmitError('Дополнительные данные должны быть JSON-объектом, например {"text":"Привет"}.')
+        return
+      }
+    }
+    setSubmitting(true)
+    try {
+      const task = await api.submitTask({ agent_id: selectedAgent, input_payload: input })
+      navigate(`/tasks/${task.id}`)
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'Не удалось создать задание')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
     <>
       <PageHead
@@ -135,12 +177,54 @@ export default function TaskCenter() {
               Выбрать агента
             </Link>
           ) : (
-            <Link to="/login" className="btn btn-primary btn-sm">
-              Войти
+            <Link to="/login" state={{ from: '/tasks' }} className="btn btn-primary btn-sm">
+              Войти или создать аккаунт
             </Link>
           )
         }
       />
+
+      {user && !id ? (
+        <form className="card quick-task-form" onSubmit={(event) => void createTask(event)}>
+          <div className="card-head">
+            <div>
+              <h2 className="card-title">Отправить новое задание</h2>
+              <div className="card-sub">Выберите опубликованного агента и введите данные. Результат появится на этой странице.</div>
+            </div>
+          </div>
+          <div className="form-grid">
+            <div className="field">
+              <label>Кому отправить?</label>
+              <select className="select" value={selectedAgent} onChange={(event) => setSelectedAgent(event.target.value)} required>
+                <option value="">Выберите агента</option>
+                {(publishedAgents.data?.items ?? []).map((agent) => <option key={agent.id} value={agent.id}>{agent.name} — {agent.summary}</option>)}
+              </select>
+              {publishedAgents.error ? <span className="faint small">Не удалось загрузить каталог. Обновите страницу.</span> : null}
+              {!publishedAgents.loading && !publishedAgents.error && (publishedAgents.data?.items.length ?? 0) === 0 ? <span className="faint small">Сначала создайте и опубликуйте агента или подключитесь к каталогу.</span> : null}
+            </div>
+            <div className="field">
+              <label>Что попросить агента сделать?</label>
+              <textarea className="textarea quick-task-input" value={inputText} onChange={(event) => setInputText(event.target.value)} placeholder="Напишите текст или задачу обычными словами" />
+              <span className="faint small">Обычный текст автоматически отправится агенту как поле «text».</span>
+            </div>
+          </div>
+          <details className="advanced-node-settings">
+            <summary>Дополнительно: задать входные данные вручную (JSON)</summary>
+            <textarea className="textarea quick-task-input" value={inputJson} onChange={(event) => setInputJson(event.target.value)} spellCheck={false} style={{ marginTop: 10 }} />
+            <label className="row small" style={{ marginTop: 8 }}>
+              <input type="checkbox" checked={advancedInput} onChange={(event) => setAdvancedInput(event.target.checked)} />
+              Использовать этот JSON вместо простого текста
+            </label>
+          </details>
+          {submitError ? <div className="alert">{submitError}</div> : null}
+          <div className="row between" style={{ flexWrap: 'wrap' }}>
+            <span className="faint small">Чтобы задание реально выполнилось, нужен подключённый узел. <Link to="/infrastructure">Настроить узел</Link></span>
+            <button className="btn btn-primary" type="submit" disabled={submitting || !selectedAgent || publishedAgents.loading}>
+              {submitting ? 'Отправляю…' : 'Отправить задание'}
+            </button>
+          </div>
+        </form>
+      ) : null}
 
       {id ? (
         <div className="card" style={{ marginBottom: 20 }}>

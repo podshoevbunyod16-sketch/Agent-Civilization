@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, type PlanDetail, type PlanEvent, type PlanStep, type PlanSummary } from '@/api/client'
 import { Badge, Empty, ErrorBox, Loader, PageHead, Stat } from '@/components/ui'
 import { useAsync } from '@/lib/useAsync'
+import { useAuth } from '@/lib/auth'
 import { relativeTime, truncate } from '@/lib/format'
 
 const STATUS_FILTERS = [
@@ -28,7 +29,19 @@ const STEP_ORDER: Record<string, number> = {
 
 export default function Plans() {
   const { id } = useParams<{ id: string }>()
+  const { user } = useAuth()
+  const navigate = useNavigate()
   const [status, setStatus] = useState('')
+  const [showCreate, setShowCreate] = useState(false)
+  const [createBusy, setCreateBusy] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+  const [newTitle, setNewTitle] = useState('Новый рабочий план')
+  const [newGoal, setNewGoal] = useState('')
+  const [newSteps, setNewSteps] = useState([{ name: 'Выполнить задачу', agentId: '' }])
+  const availableAgents = useAsync(
+    (signal) => api.agents({ status: 'published', page_size: 100, sort: 'reputation' }, signal),
+    [],
+  )
   const [page, setPage] = useState(1)
 
   const list = useAsync(
@@ -65,6 +78,42 @@ export default function Plans() {
 
   const items = list.data?.items ?? []
 
+  const createWorkflow = async () => {
+    setCreateBusy(true)
+    setCreateError(null)
+    try {
+      const plan = await api.createPlan({
+        title: newTitle,
+        goal: { description: newGoal },
+        steps: newSteps.map((step, index) => ({
+          key: `step-${index + 1}`,
+          name: step.name,
+          agent_id: step.agentId,
+          depends_on: index > 0 ? [`step-${index}`] : [],
+          input_payload: { goal: newGoal },
+        })),
+        auto_start: true,
+      })
+      navigate(`/plans/${plan.id}`)
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : 'Не удалось запустить план')
+    } finally {
+      setCreateBusy(false)
+    }
+  }
+
+  if (!user) {
+    return (
+      <div className="stack">
+        <PageHead title="Планы и оркестрация" subtitle="Разбейте большую задачу на последовательные шаги." />
+        <div className="card">
+          <p>Войдите, чтобы создавать планы и смотреть их выполнение.</p>
+          <Link to="/login" state={{ from: '/plans' }} className="btn btn-primary">Войти или создать аккаунт</Link>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="stack">
       <PageHead
@@ -76,6 +125,58 @@ export default function Plans() {
           </Link>
         }
       />
+
+      <section className="card quick-plan-card">
+        <div className="card-head">
+          <div>
+            <h2 className="card-title">Собрать работу из шагов</h2>
+            <div className="card-sub">Опишите цель, выберите агента для каждого шага — система запустит их по порядку.</div>
+          </div>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowCreate((value) => !value)}>
+            {showCreate ? 'Скрыть' : 'Создать план'}
+          </button>
+        </div>
+        {showCreate ? (
+          <div className="stack">
+            <div className="form-grid">
+              <div className="field">
+                <label>Название плана</label>
+                <input className="input" value={newTitle} onChange={(event) => setNewTitle(event.target.value)} placeholder="Подготовить краткий отчёт" />
+              </div>
+              <div className="field">
+                <label>Что нужно получить в итоге?</label>
+                <input className="input" value={newGoal} onChange={(event) => setNewGoal(event.target.value)} placeholder="Например: краткое резюме на русском" />
+              </div>
+            </div>
+            {newSteps.map((step, index) => (
+              <div className="quick-plan-step" key={index}>
+                <div className="field">
+                  <label>Шаг {index + 1}: что сделать</label>
+                  <input className="input" value={step.name} onChange={(event) => setNewSteps((previous) => previous.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} placeholder="Проанализировать материал" />
+                </div>
+                <div className="field">
+                  <label>Какой агент выполнит шаг?</label>
+                  <select className="select" value={step.agentId} onChange={(event) => setNewSteps((previous) => previous.map((item, itemIndex) => itemIndex === index ? { ...item, agentId: event.target.value } : item))}>
+                    <option value="">Выберите опубликованного агента</option>
+                    {(availableAgents.data?.items ?? []).map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+                  </select>
+                </div>
+                {newSteps.length > 1 ? <button className="btn btn-sm" type="button" onClick={() => setNewSteps((previous) => previous.filter((_, itemIndex) => itemIndex !== index))}>Удалить шаг</button> : null}
+              </div>
+            ))}
+            {availableAgents.error ? <ErrorBox message={availableAgents.error} onRetry={availableAgents.reload} /> : null}
+            {!availableAgents.loading && (availableAgents.data?.items.length ?? 0) === 0 ? <div className="alert info">Пока нет опубликованных агентов. Сначала создайте агента в меню → «Мои агенты» и опубликуйте его.</div> : null}
+            {createError ? <ErrorBox message={createError} /> : null}
+            <div className="row" style={{ flexWrap: 'wrap' }}>
+              <button className="btn" type="button" onClick={() => setNewSteps((previous) => [...previous, { name: '', agentId: '' }])} disabled={newSteps.length >= 20}>＋ Добавить следующий шаг</button>
+              <button className="btn btn-primary" type="button" onClick={() => void createWorkflow()} disabled={createBusy || !newTitle.trim() || !newGoal.trim() || newSteps.some((step) => !step.name.trim() || !step.agentId) || !availableAgents.data?.items.length}>
+                {createBusy ? 'Запускаю…' : 'Создать и запустить'}
+              </button>
+            </div>
+            <div className="faint small">Шаги выполняются по порядку. Для фактического выполнения нужен доступный узел-исполнитель.</div>
+          </div>
+        ) : null}
+      </section>
 
       {stats.data ? (
         <div className="grid grid-4">
