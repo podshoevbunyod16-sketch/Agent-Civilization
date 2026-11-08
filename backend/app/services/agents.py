@@ -38,8 +38,16 @@ from app.schemas.agent import (
 
 # Технические/секретные ключи конфигурации, которые нельзя отдавать наружу
 SENSITIVE_CONFIG_KEYS = {
-    "code", "api_key", "token", "secret", "password", "env", "headers",
-    "authorization", "credentials", "private_key",
+    "code",
+    "api_key",
+    "token",
+    "secret",
+    "password",
+    "env",
+    "headers",
+    "authorization",
+    "credentials",
+    "private_key",
 }
 
 
@@ -116,9 +124,7 @@ async def _ensure_capabilities_exist(
     if not keys:
         return
     existing = set(
-        (
-            await session.execute(select(Capability.key).where(Capability.key.in_(keys)))
-        ).scalars()
+        (await session.execute(select(Capability.key).where(Capability.key.in_(keys)))).scalars()
     )
     for key in keys:
         if key not in existing:
@@ -259,6 +265,13 @@ async def create_version(
 def _publish_agent(agent: Agent, actor: User) -> None:
     if agent.current_version < 1:
         raise ValidationError("Нельзя опубликовать агента без версии", code="agent_without_version")
+    if not agent.capabilities:
+        raise ValidationError(
+            "Нельзя опубликовать агента без объявленных возможностей",
+            code="agent_without_capabilities",
+        )
+    if agent.status is AgentStatus.archived:
+        raise ValidationError("Архивированного агента нельзя опубликовать")
     agent.status = AgentStatus.published
     agent.published_at = agent.published_at or _now()
     agent.suspended_at = None
@@ -294,9 +307,7 @@ async def set_published(
     return await get_agent(session, agent.id)
 
 
-async def suspend_agent(
-    session: AsyncSession, agent: Agent, actor: User, reason: str
-) -> Agent:
+async def suspend_agent(session: AsyncSession, agent: Agent, actor: User, reason: str) -> Agent:
     if agent.status is AgentStatus.suspended:
         raise ValidationError("Агент уже приостановлен")
     agent.status = AgentStatus.suspended
@@ -431,9 +442,7 @@ async def search_agents(
         if viewer is None:
             filters.append(Agent.status == AgentStatus.published)
         elif not viewer.is_admin:
-            filters.append(
-                or_(Agent.status == AgentStatus.published, Agent.owner_id == viewer.id)
-            )
+            filters.append(or_(Agent.status == AgentStatus.published, Agent.owner_id == viewer.id))
     elif status is not None:
         filters.append(Agent.status == status)
         if viewer is None:
@@ -443,9 +452,7 @@ async def search_agents(
         if viewer is None:
             filters.append(Agent.status == AgentStatus.published)
         elif not viewer.is_admin:
-            filters.append(
-                or_(Agent.status == AgentStatus.published, Agent.owner_id == viewer.id)
-            )
+            filters.append(or_(Agent.status == AgentStatus.published, Agent.owner_id == viewer.id))
 
     if category:
         filters.append(Agent.category == category)
@@ -481,9 +488,7 @@ async def search_agents(
     stmt = stmt.order_by(column.asc() if order == "asc" else column.desc(), Agent.id)
 
     total = int((await session.execute(count_stmt)).scalar_one())
-    rows = (
-        await session.execute(stmt.offset(offset).limit(limit))
-    ).scalars().unique().all()
+    rows = (await session.execute(stmt.offset(offset).limit(limit))).scalars().unique().all()
     return list(rows), total
 
 

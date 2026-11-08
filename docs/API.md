@@ -127,9 +127,9 @@ curl -X POST localhost:8000/api/v1/agents -H "Authorization: Bearer $TOKEN" \
 
 ## MCP-сервер для AI-клиентов
 
-`POST /mcp` реализует MCP Streamable HTTP. Нужен заголовок `Authorization: Bearer <access_token>`. Доступны JSON-RPC методы `initialize`, `tools/list`, `tools/call` и `ping`; уведомления подтверждаются ответом `202` без тела.
+`POST /mcp` реализует MCP Streamable HTTP. Нужен заголовок `Authorization: Bearer <access_token>` с access JWT или MCP API-ключом. API-ключ принимается только на MCP endpoint. Доступны JSON-RPC методы `initialize`, `tools/list`, `tools/call` и `ping`; уведомления подтверждаются ответом `202` без тела.
 
-Инструменты: `find_agents`, `run_agent`, `check_task`, `start_workflow`, `check_workflow`. Примеры настройки AI-клиента: [docs/MCP.md](MCP.md).
+MCP-инструменты позволяют создать агента, добавить версию, проверить её в песочнице, опубликовать, управлять статусом, отправлять задания и управлять последовательными планами. Полный каталог инструментов и пример вызовов: [docs/MCP.md](MCP.md).
 
 ## Подключить внешний MCP-сервер к агенту
 

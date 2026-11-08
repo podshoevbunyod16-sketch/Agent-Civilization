@@ -16,9 +16,7 @@ from tests.conftest import (
 
 # ── Создание и чтение ─────────────────────────────────────────────────
 async def test_create_agent_creates_draft_with_capabilities(client, user):
-    response = await client.post(
-        "/api/v1/agents", json=agent_payload(), headers=user.headers
-    )
+    response = await client.post("/api/v1/agents", json=agent_payload(), headers=user.headers)
     assert response.status_code == 201, response.text
     agent = response.json()
     assert agent["status"] == "draft"
@@ -40,9 +38,7 @@ async def test_create_agent_requires_auth(client):
 
 async def test_duplicate_slug_conflict(client, user):
     slug = f"dup-{uuid.uuid4().hex[:6]}"
-    first = await client.post(
-        "/api/v1/agents", json=agent_payload(slug=slug), headers=user.headers
-    )
+    first = await client.post("/api/v1/agents", json=agent_payload(slug=slug), headers=user.headers)
     assert first.status_code == 201
     second = await client.post(
         "/api/v1/agents", json=agent_payload(slug=slug), headers=user.headers
@@ -148,9 +144,7 @@ async def test_public_view_hides_secrets_from_entrypoint_config(client, user, ot
     assert "super-secret-key" not in serialized
     assert "api_key" not in serialized
 
-    owner_view = await client.get(
-        f"/api/v1/agents/{agent['id']}/entrypoint", headers=user.headers
-    )
+    owner_view = await client.get(f"/api/v1/agents/{agent['id']}/entrypoint", headers=user.headers)
     assert owner_view.status_code == 200
     assert owner_view.json()["config"]["api_key"] == "super-secret-key"
 
@@ -203,6 +197,17 @@ async def test_cannot_publish_without_capabilities(client, user):
     assert response.json()["error"]["code"] == "agent_without_capabilities"
 
 
+async def test_cannot_publish_version_without_capabilities(client, user):
+    agent = await create_agent(client, user, capabilities=[])
+    response = await client.post(
+        f"/api/v1/agents/{agent['id']}/versions",
+        json=version_payload(publish=True),
+        headers=user.headers,
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "agent_without_capabilities"
+
+
 async def test_publish_makes_agent_visible_in_catalog(client, user, other_user):
     agent = await create_published_agent(client, user)
     catalog = await client.get("/api/v1/agents")
@@ -248,7 +253,9 @@ async def test_draft_can_be_deleted(client, user):
     agent = await create_agent(client, user)
     response = await client.delete(f"/api/v1/agents/{agent['id']}", headers=user.headers)
     assert response.status_code == 204
-    assert (await client.get(f"/api/v1/agents/{agent['id']}", headers=user.headers)).status_code == 404
+    assert (
+        await client.get(f"/api/v1/agents/{agent['id']}", headers=user.headers)
+    ).status_code == 404
 
 
 # ── Права владельца ───────────────────────────────────────────────────
@@ -303,7 +310,9 @@ async def test_search_filters_by_text_category_and_capability(client, user):
     await create_published_agent(
         client, user, name="Агент-переводчик", category="language", tags=["translate"]
     )
-    target = await create_published_agent(client, user, name="Агент-аналитик данных", category="data")
+    target = await create_published_agent(
+        client, user, name="Агент-аналитик данных", category="data"
+    )
 
     by_text = await client.get("/api/v1/agents", params={"q": "аналитик"})
     assert [i["id"] for i in by_text.json()["items"]] == [target["id"]]
@@ -311,9 +320,7 @@ async def test_search_filters_by_text_category_and_capability(client, user):
     by_category = await client.get("/api/v1/agents", params={"category": "data"})
     assert target["id"] in {i["id"] for i in by_category.json()["items"]}
 
-    by_capability = await client.get(
-        "/api/v1/agents", params={"capability": "research.web_search"}
-    )
+    by_capability = await client.get("/api/v1/agents", params={"capability": "research.web_search"})
     assert target["id"] in {i["id"] for i in by_capability.json()["items"]}
 
     no_match = await client.get("/api/v1/agents", params={"q": "не-существует-такого"})
@@ -363,9 +370,7 @@ async def test_draft_with_versions_can_be_deleted(client, user):
     assert (
         await client.get(f"/api/v1/agents/{agent['id']}", headers=user.headers)
     ).status_code == 404
-    versions = await client.get(
-        f"/api/v1/agents/{agent['id']}/versions", headers=user.headers
-    )
+    versions = await client.get(f"/api/v1/agents/{agent['id']}/versions", headers=user.headers)
     assert versions.status_code == 404
 
 

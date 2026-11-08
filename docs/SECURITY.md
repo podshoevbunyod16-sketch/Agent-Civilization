@@ -66,14 +66,15 @@ signature = HMAC-SHA256(key, canonical)  # canonical = key\nmethod\npath\ntimest
 * ограничение размера stdout/stderr;
 * изолированный временный рабочий каталог, удаляемый после запуска.
 
-`docker` (production, рекомендуется):
+`docker` (обязателен в staging/production):
 * `--network none` по умолчанию, `--read-only`, `--cap-drop ALL`,
   `--security-opt no-new-privileges`, `--user 65534`;
 * лимиты `--memory`, `--memory-swap`, `--cpus`, `--pids-limit`;
 * тот же wall-clock таймаут и очистка каталога.
 
 Ограничения песочницы `subprocess`: сетевой доступ не блокируется средствами
-ядра — для production используйте `docker` (см. `docs/STATUS.md`).
+ядра, поэтому в staging/production backend откажется её запускать; настройте
+`SANDBOX_BACKEND=docker` (см. `docs/STATUS.md`).
 
 ## 5. Транспорт и заголовки
 
