@@ -60,9 +60,7 @@ async def test_syntax_error_fails_gracefully():
 
 async def test_infinite_loop_hits_wall_clock_timeout():
     runner = SandboxRunner(backend="subprocess", max_wall_seconds=2)
-    result = await runner.run_python(
-        "def run(payload):\n    while True:\n        pass", {}
-    )
+    result = await runner.run_python("def run(payload):\n    while True:\n        pass", {})
     assert result.status in {"timeout", "resource_exceeded", "failed"}
     assert result.duration_ms >= 1000, "таймаут должен срабатывать по wall-clock"
 
@@ -107,6 +105,15 @@ async def test_noop_backend_refuses_execution():
         await runner.run_python("def run(payload):\n    return {}", {})
 
 
+async def test_subprocess_backend_is_blocked_in_production(monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "environment", "production")
+    runner = SandboxRunner(backend="subprocess")
+    with pytest.raises(SandboxUnavailableError, match="только в Docker sandbox"):
+        await runner.run_python("def run(payload):\n    return {}", {})
+
+
 async def test_runner_built_from_resource_limits():
     runner = SandboxRunner.from_limits(
         {
@@ -131,7 +138,7 @@ async def test_execution_result_serialisation():
     assert payload["backend"] == "subprocess"
 
 
-def test_trace_id_is_unique_hex():
+async def test_trace_id_is_unique_hex():
     a, b = new_trace_id(), new_trace_id()
     assert a != b
     assert len(a) == 32
@@ -145,7 +152,8 @@ async def test_agent_cannot_write_outside_workdir():
         "def run(payload):\n"
         "    with open('result.txt', 'w') as fh:\n"
         "        fh.write('data')\n"
-        "    return {'written': True}", {},
+        "    return {'written': True}",
+        {},
     )
     assert result.status == "succeeded"
     assert result.output == {"written": True}

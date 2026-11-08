@@ -85,20 +85,25 @@ def _current_version(agent: Agent) -> Any:
 # ── Проверка совместимости ──────────────────────────────────────────────
 
 
-def check_manifest(agent: Agent, version: Any) -> dict[str, Any]:
-    """Сверка манифеста с опубликованной версией: то, что описано, и то, что есть."""
+def check_manifest(agent: Agent, version: Any, *, allow_draft: bool = False) -> dict[str, Any]:
+    """Сверка манифеста с версией; черновики разрешены только в явном тестовом режиме."""
     entrypoint = version.entrypoint_type
     raw = getattr(entrypoint, "value", str(entrypoint))
     problems: list[str] = []
     if raw not in ALLOWED_ENTRYPOINTS:
         problems.append(f"неизвестный тип точки входа: {raw}")
-    if raw in {"python", "docker"} and not (version.entrypoint_config or {}).get("code") and not (
-        version.entrypoint_config or {}
-    ).get("image"):
+    if (
+        raw in {"python", "docker"}
+        and not (version.entrypoint_config or {}).get("code")
+        and not (version.entrypoint_config or {}).get("image")
+    ):
         problems.append("нет кода или образа в конфигурации точки входа")
-    if raw in {"http", "mcp"} and not (version.entrypoint_config or {}).get("url"):
+    config = version.entrypoint_config or {}
+    if raw == "http" and not config.get("url"):
         problems.append("нет url в конфигурации точки входа")
-    if agent.status is not AgentStatus.published:
+    if raw == "mcp" and not config.get("server_url"):
+        problems.append("нет server_url в конфигурации точки входа")
+    if not allow_draft and agent.status is not AgentStatus.published:
         problems.append(f"агент не опубликован (статус {agent.status.value})")
     if not version.input_schema:
         problems.append("не объявлена входная схема")
@@ -266,6 +271,10 @@ async def run_compatibility_check(
     is_admin: bool,
     data: CompatibilityCheckRequest,
     runner: SandboxRunner | None = None,
+    allow_draft: bool = False,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+    request_id: str | None = None,
 ) -> CompatibilityCheck:
     agent = await _get_agent(session, agent_id)
     if agent.owner_id != user_id and not is_admin:
@@ -310,21 +319,28 @@ async def run_compatibility_check(
         if raw in {"python"}:
             sample_output, source = await _execute_python(version, sample_input, sandbox)
         elif raw == "http":
-            sample_output, source = None, {
-                "kind": "test_code",
-                "status": "skipped",
-                "message": "HTTP-агент: исполнение происходит на узле, здесь проверяется контракт",
-                "details": {},
-            }
+            sample_output, source = (
+                None,
+                {
+                    "kind": "test_code",
+                    "status": "skipped",
+                    "message": "HTTP-агент: исполнение происходит на узле, "
+                    "здесь проверяется контракт",
+                    "details": {},
+                },
+            )
         else:
-            sample_output, source = None, {
-                "kind": "test_code",
-                "status": "skipped",
-                "message": f"тип {raw}: исполнение проверяется на узле",
-                "details": {},
-            }
+            sample_output, source = (
+                None,
+                {
+                    "kind": "test_code",
+                    "status": "skipped",
+                    "message": f"тип {raw}: исполнение проверяется на узле",
+                    "details": {},
+                },
+            )
 
-    checks.append(check_manifest(agent, version))
+    checks.append(check_manifest(agent, version, allow_draft=allow_draft))
     checks.append(check_limits(version))
     checks.append(check_input_schema(version, sample_input))
     checks.append(source)
@@ -365,6 +381,9 @@ async def run_compatibility_check(
         target_type="agent",
         target_id=agent.id,
         actor_id=user_id,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        request_id=request_id,
         outcome="success" if record.status is CheckStatus.passed else "failure",
         data={"score": score, "passed": passed, "failed": failed},
     )
@@ -400,9 +419,7 @@ async def create_integration(
     session: AsyncSession, *, owner_id: uuid.UUID, data: IntegrationCreate
 ) -> Integration:
     existing = await session.execute(
-        select(Integration).where(
-            Integration.owner_id == owner_id, Integration.slug == data.slug
-        )
+        select(Integration).where(Integration.owner_id == owner_id, Integration.slug == data.slug)
     )
     if existing.scalar_one_or_none() is not None:
         raise ConflictError("Интеграция с таким slug уже есть", code="integration_slug_taken")
@@ -515,9 +532,7 @@ async def list_integrations(
         stmt = stmt.where(Integration.owner_id == user_id)
     elif not is_admin:
         # Публичный каталог + собственные черновики
-        stmt = stmt.where(
-            (Integration.is_public.is_(True)) | (Integration.owner_id == user_id)
-        )
+        stmt = stmt.where((Integration.is_public.is_(True)) | (Integration.owner_id == user_id))
     if kind:
         stmt = stmt.where(Integration.kind == IntegrationKind(kind))
     if q:
@@ -724,9 +739,9 @@ async def portal_overview(session: AsyncSession, *, user_id: uuid.UUID) -> dict[
         "integrations": int(
             (
                 await session.execute(
-                    select(func.count()).select_from(Integration).where(
-                        Integration.owner_id == user_id
-                    )
+                    select(func.count())
+                    .select_from(Integration)
+                    .where(Integration.owner_id == user_id)
                 )
             ).scalar_one()
         ),
@@ -743,9 +758,7 @@ async def ecosystem_stats(session: AsyncSession) -> dict[str, Any]:
         )
     ).all()
     integration_rows = (
-        await session.execute(
-            select(Integration.kind, func.count()).group_by(Integration.kind)
-        )
+        await session.execute(select(Integration.kind, func.count()).group_by(Integration.kind))
     ).all()
     total_tasks = int((await session.execute(select(func.count()).select_from(Task))).scalar_one())
     return {

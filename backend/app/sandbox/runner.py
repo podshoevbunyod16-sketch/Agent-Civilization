@@ -37,7 +37,7 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-_RUNNER_SOURCE = '''
+_RUNNER_SOURCE = """
 import json, sys, traceback
 
 def main():
@@ -82,7 +82,7 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-'''
+"""
 
 
 def _write_text_sync(path: str, content: str) -> None:
@@ -175,6 +175,10 @@ class SandboxRunner:
         )
 
     async def run_python(self, code: str, payload: dict[str, Any]) -> ExecutionResult:
+        if settings.environment in {"staging", "production"} and self.backend != "docker":
+            raise SandboxUnavailableError(
+                "В staging/production пользовательский код можно выполнять только в Docker sandbox"
+            )
         if self.backend == "noop":
             raise SandboxUnavailableError("Sandbox backend 'noop' не выполняет код")
         if self.backend == "docker":
@@ -312,20 +316,38 @@ class SandboxRunner:
             await asyncio.to_thread(_chmod_all)
 
             cmd = [
-                "docker", "run", "--rm", "--pull", "never",
-                "--network", "bridge" if self.allow_network else "none",
-                "--memory", f"{self.max_memory_mb}m",
-                "--memory-swap", f"{self.max_memory_mb}m",
-                "--cpus", "1",
-                "--pids-limit", "64",
+                "docker",
+                "run",
+                "--rm",
+                "--pull",
+                "never",
+                "--network",
+                "bridge" if self.allow_network else "none",
+                "--memory",
+                f"{self.max_memory_mb}m",
+                "--memory-swap",
+                f"{self.max_memory_mb}m",
+                "--cpus",
+                "1",
+                "--pids-limit",
+                "64",
                 "--read-only",
-                "--cap-drop", "ALL",
-                "--security-opt", "no-new-privileges",
-                "--user", "65534:65534",
-                "-v", f"{workdir}:/work:rw",
-                "-w", "/work",
+                "--cap-drop",
+                "ALL",
+                "--security-opt",
+                "no-new-privileges",
+                "--user",
+                "65534:65534",
+                "-v",
+                f"{workdir}:/work:rw",
+                "-w",
+                "/work",
                 self.image,
-                "python", "-I", "-S", "/work/runner.py", "/work/input.json",
+                "python",
+                "-I",
+                "-S",
+                "/work/runner.py",
+                "/work/input.json",
                 "/work/output.json",
             ]
             started = time.monotonic()
@@ -342,7 +364,9 @@ class SandboxRunner:
             except TimeoutError:
                 timed_out = True
                 await asyncio.create_subprocess_exec(
-                    "docker", "kill", str(proc.pid)  # type: ignore[arg-type]
+                    "docker",
+                    "kill",
+                    str(proc.pid),  # type: ignore[arg-type]
                 )
                 proc.kill()
                 stdout_b, stderr_b = await proc.communicate()

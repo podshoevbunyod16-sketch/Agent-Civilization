@@ -150,6 +150,12 @@ async def run_local(task_id: uuid.UUID, session: DbSession, user: CurrentUser) -
     """
     from app.core.config import settings
 
+    if settings.environment not in {"development", "test"}:
+        raise PermissionDeniedError(
+            "Локальный запуск доступен только в development/test; "
+            "в production задания исполняют узлы",
+            code="run_local_disabled",
+        )
     task = await gateway.get_task(session, task_id)
     if task.requester_id != user.id and not user.is_admin:
         raise PermissionDeniedError("Нет доступа к этому заданию")
