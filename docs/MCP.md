@@ -4,12 +4,12 @@ Agent Civilization предоставляет **MCP-сервер по HTTP**. П
 
 ## Что нужно
 
-1. Запущенный Agent Civilization: API доступен по адресу `http://localhost:8000`.
+1. Запущенный Agent Civilization: API доступен по адресу `https://agent-civilization-1.onrender.com`.
 2. Учётная запись в Agent Civilization.
 3. MCP-клиент, который поддерживает **Streamable HTTP** и пользовательские заголовки.
 4. Долгоживущий API-ключ Agent Civilization. Создайте его в меню **Ключи API и MCP**; полный секрет показывается только один раз. Назовите его, например, «MCP на телефоне».
 
-**Адрес MCP-сервера:** `http://localhost:8000/api/v1/mcp`
+**Адрес MCP-сервера:** `https://agent-civilization-1.onrender.com/api/v1/mcp`
 
 В удалённом окружении замените `localhost:8000` на адрес своего сервера и используйте HTTPS.
 
@@ -18,7 +18,7 @@ Agent Civilization предоставляет **MCP-сервер по HTTP**. П
 Проще всего создать ключ на странице **Ключи API и MCP** в веб-интерфейсе. Если удобнее через API, сначала войдите (`POST /api/v1/auth/login`), затем используйте текущий `access_token` один раз для создания ключа:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/auth/api-keys \
+curl -X POST https://agent-civilization-1.onrender.com/api/v1/auth/api-keys \
   -H 'Authorization: Bearer ВАШ_ACCESS_TOKEN' \
   -H 'Content-Type: application/json' \
   -d '{"name":"MCP client","expires_in_days":90}'
@@ -34,7 +34,7 @@ curl -X POST http://localhost:8000/api/v1/auth/api-keys \
 {
   "mcpServers": {
     "agent-civilization": {
-      "url": "http://localhost:8000/api/v1/mcp",
+      "url": "https://agent-civilization-1.onrender.com/api/v1/mcp",
       "headers": {
         "Authorization": "Bearer ac_live_ВАШ_API_КЛЮЧ"
       }
