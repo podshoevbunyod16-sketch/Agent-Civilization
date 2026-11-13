@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from sqlalchemy import func, select
@@ -57,10 +58,25 @@ logger = logging.getLogger(__name__)
 
 CURRENCY = "ACU"
 # Стартовый бюджет нового участника (внутренние единицы, не деньги)
-SIGNUP_GRANT_UNITS = 100.0
+SIGNUP_GRANT_UNITS = Decimal("100.0000")
 DEFAULT_FEE_RATIO = 0.05
-# Допуск на погрешность float при сверке проводок
-EPSILON = 1e-6
+# Все денежные значения — Decimal с 4 знаками (Numeric(18, 4) в БД).
+MONEY_QUANT = Decimal("0.0001")
+# Допуск для сверки (суммы 4д.п. — любое расхождение больше 1e-6 является ошибкой)
+EPSILON = Decimal("0.000001")
+
+
+def D(value: Decimal | float | int | str | None) -> Decimal:
+    """Нормализация денежного значения в Decimal через str (без артефактов float)."""
+    if value is None:
+        return Decimal("0.0000")
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value))
+
+
+def q4(value: Decimal | float | int | str) -> Decimal:
+    return D(value).quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)
 
 
 def _now() -> datetime:
@@ -96,12 +112,12 @@ async def get_or_create_account(
         owner_id=owner_id,
         agent_id=agent_id,
         label=label[:120],
-        balance_units=0.0,
-        credit_limit=0.0,
+        balance_units=Decimal("0.0000"),
+        credit_limit=Decimal("0.0000"),
     )
     if account_type is AccountType.treasury:
         # Treasury — единственный счёт с разрешённым минусом: он «печатает»
-        account.credit_limit = 1e12
+        account.credit_limit = Decimal("1000000000000.0000")
     session.add(account)
     try:
         await session.flush()
@@ -180,8 +196,8 @@ async def post_transaction(
     session: AsyncSession,
     *,
     kind: TransactionKind,
-    amount_units: float,
-    entries: list[tuple[Account, float]],
+    amount_units: float | Decimal,
+    entries: list[tuple[Account, float | Decimal]],
     description: str = "",
     task_id: uuid.UUID | None = None,
     agent_id: uuid.UUID | None = None,
@@ -195,16 +211,20 @@ async def post_transaction(
     `entries` — пары (счёт, сумма со знаком). Сумма обязана быть нулём;
     иначе транзакция не создаётся (инвариант двойной записи).
     """
-    if not entries or len(entries) < 2:
+    normalized: list[tuple[Account, Decimal]] = [
+        (account, D(amount)) for account, amount in entries
+    ]
+    amount_units = D(amount_units)
+    if not normalized or len(normalized) < 2:
         raise ValidationError(
             "Транзакция требует минимум двух проводок", code="ledger_needs_two_entries"
         )
-    total = sum(amount for _, amount in entries)
+    total = sum((amount for _, amount in normalized), Decimal("0"))
     if abs(total) > EPSILON:
         raise ValidationError(
             "Сумма проводок должна быть нулём (двойная запись)",
             code="ledger_unbalanced",
-            details={"sum": round(total, 8)},
+            details={"sum": float(total)},
         )
     if amount_units < 0:
         raise ValidationError(
@@ -227,7 +247,7 @@ async def post_transaction(
     transaction = Transaction(
         kind=kind,
         status=TransactionStatus.posted,
-        amount_units=round(amount_units, 4),
+        amount_units=q4(amount_units),
         description=description[:280],
         task_id=task_id,
         agent_id=agent_id,
@@ -240,8 +260,8 @@ async def post_transaction(
     session.add(transaction)
     await session.flush()
 
-    applied: dict[uuid.UUID, float] = {}
-    for account, amount in entries:
+    applied: dict[uuid.UUID, Decimal] = {}
+    for account, amount in normalized:
         current = locked[account.id]
         if current.status is not AccountStatus.active:
             raise ValidationError(
@@ -249,24 +269,24 @@ async def post_transaction(
                 code="account_frozen",
                 details={"account_id": str(current.id), "status": current.status.value},
             )
-        new_balance = round(current.balance_units + amount + applied.get(current.id, 0.0), 6)
-        applied[current.id] = applied.get(current.id, 0.0) + amount
+        new_balance = D(current.balance_units) + amount + applied.get(current.id, Decimal("0"))
+        applied[current.id] = applied.get(current.id, Decimal("0")) + amount
         # Отрицательный баланс допустим только в пределах credit_limit
-        if new_balance < -abs(current.credit_limit) - EPSILON:
+        if new_balance < -abs(D(current.credit_limit)) - EPSILON:
             raise ValidationError(
                 "Недостаточно средств",
                 code="insufficient_funds",
                 details={
                     "account_id": str(current.id),
-                    "balance": round(current.balance_units, 4),
-                    "required": round(-amount, 4),
+                    "balance": float(D(current.balance_units)),
+                    "required": float(-amount),
                 },
             )
         session.add(
             LedgerEntry(
                 transaction_id=transaction.id,
                 account_id=current.id,
-                amount_units=round(amount, 6),
+                amount_units=amount,
                 balance_after=new_balance,
             )
         )
@@ -282,7 +302,7 @@ async def post_transaction(
             )
         )
     ).scalar_one()
-    if abs(float(written)) > EPSILON:
+    if abs(D(written)) > EPSILON:
         raise LedgerInconsistent(
             f"Транзакция {transaction.id} не сходится: сумма проводок {written}"
         )
@@ -327,8 +347,8 @@ async def reverse_transaction(
     reversal = await post_transaction(
         session,
         kind=TransactionKind.reversal,
-        amount_units=original.amount_units,
-        entries=[(by_id[entry.account_id], -entry.amount_units) for entry in entries],
+        amount_units=D(original.amount_units),
+        entries=[(by_id[entry.account_id], -D(entry.amount_units)) for entry in entries],
         description=f"Отмена: {reason}"[:280],
         task_id=original.task_id,
         agent_id=original.agent_id,
@@ -353,23 +373,24 @@ async def hold_budget(
     task: Task,
     *,
     requester_id: uuid.UUID,
-    budget_units: float,
+    budget_units: float | Decimal,
 ) -> TaskBudget | None:
     """Замораживает бюджет задания на эскроу-счёте заказчика.
 
     Бюджет не обязателен: задания без бюджета исполняются как раньше, просто
     без оплаты и награды. Если бюджет указан — он должен быть покрыт.
     """
+    budget_units = D(budget_units)
     if budget_units <= 0:
         return None
-    if budget_units > 1_000_000:
+    if budget_units > Decimal("1000000"):
         raise ValidationError("Слишком большой бюджет задания", code="budget_too_large")
 
     existing = (
         await session.execute(select(TaskBudget).where(TaskBudget.task_id == task.id))
     ).scalars().unique().one_or_none()
     if existing is not None:
-        if abs(existing.budget_units - budget_units) > EPSILON:
+        if abs(D(existing.budget_units) - budget_units) > EPSILON:
             raise ConflictError(
                 "Бюджет задания уже зафиксирован", code="budget_exists"
             )
@@ -394,7 +415,7 @@ async def hold_budget(
         requester_account_id=requester.id,
         escrow_account_id=escrow.id,
         agent_account_id=(await agent_account(session, task.agent_id)).id,
-        budget_units=round(budget_units, 4),
+        budget_units=q4(budget_units),
         status=HoldStatus.held,
         hold_transaction_id=hold.id,
     )
@@ -438,25 +459,25 @@ async def settle_task_budget(
     escrow = await escrow_account(session, task.id)
     agent_acc = await agent_account(session, task.agent_id)
 
-    spent = min(float(task.cost_units or 0.0), budget.budget_units)
-    ratio = await funding_ratio()
-    fee = round(spent * ratio, 4)
-    payout = round(spent - fee, 4)
-    refund = round(budget.budget_units - spent, 4)
+    spent = min(D(task.cost_units), D(budget.budget_units))
+    ratio = Decimal(str(await funding_ratio()))
+    fee = q4(spent * ratio)
+    payout = q4(spent - fee)
+    refund = q4(D(budget.budget_units) - spent)
 
-    entries: list[tuple[Account, float]] = []
+    entries: list[tuple[Account, Decimal]] = []
     if payout > 0:
         entries.append((agent_acc, payout))
     if fee > 0:
         entries.append((await treasury_account(session), fee))
     if refund > 0:
         entries.append((requester, refund))
-    entries.append((escrow, -round(spent, 4) - refund))
+    entries.append((escrow, -spent - refund))
 
     settle = await post_transaction(
         session,
         kind=TransactionKind.payout if spent > 0 else TransactionKind.release,
-        amount_units=round(spent, 4),
+        amount_units=q4(spent),
         entries=entries,
         description=(
             f"Расчёт по заданию {task.id}: выплата {payout}, комиссия {fee}, возврат {refund}"
@@ -465,10 +486,10 @@ async def settle_task_budget(
         agent_id=task.agent_id,
         idempotency_key=f"settle:{task.id}",
         details={
-            "spent": spent,
-            "payout": payout,
-            "fee": fee,
-            "refund": refund,
+            "spent": float(spent),
+            "payout": float(payout),
+            "fee": float(fee),
+            "refund": float(refund),
             "verdict": verdict.verdict.value if verdict is not None else None,
         },
     )
@@ -500,8 +521,8 @@ async def release_task_budget(
     release = await post_transaction(
         session,
         kind=TransactionKind.release,
-        amount_units=budget.budget_units,
-        entries=[(escrow, -budget.budget_units), (requester, budget.budget_units)],
+        amount_units=D(budget.budget_units),
+        entries=[(escrow, -D(budget.budget_units)), (requester, D(budget.budget_units))],
         description=f"Возврат бюджета задания {task.id}: {reason}"[:280],
         task_id=task.id,
         agent_id=task.agent_id,
@@ -509,7 +530,7 @@ async def release_task_budget(
         details={"reason": reason},
     )
     budget.status = HoldStatus.released
-    budget.released_units = budget.budget_units
+    budget.released_units = D(budget.budget_units)
     budget.settle_transaction_id = release.id
     budget.settled_at = _now()
     await session.flush()
@@ -587,7 +608,7 @@ async def grant_reward(
     ).scalars().unique().one_or_none()
     if agent is None:
         raise NotFoundError("Агент не найден", code="agent_not_found")
-    if float(agent.reputation_score) < rule.min_reputation:
+    if D(agent.reputation_score) < D(rule.min_reputation):
         return None
 
     # Дневной лимит начислений на агента — защита от накрутки
@@ -599,7 +620,7 @@ async def grant_reward(
             )
         )
     ).scalar_one()
-    if float(daily) >= rule.daily_cap_units:
+    if D(daily) >= D(rule.daily_cap_units):
         logger.info("reward_daily_cap agent=%s", agent.id)
         return None
 
@@ -613,9 +634,9 @@ async def grant_reward(
         ).scalar_one()
         or 0
     )
-    base = float(rule.verified_reward_units)
-    bonus = float(rule.capability_bonus_units) * verified_levels
-    amount = round(min(base + bonus, rule.daily_cap_units - float(daily)), 4)
+    base = D(rule.verified_reward_units)
+    bonus = D(rule.capability_bonus_units) * verified_levels
+    amount = q4(min(base + bonus, D(rule.daily_cap_units) - D(daily)))
     if amount <= 0:
         return None
 
@@ -630,7 +651,7 @@ async def grant_reward(
         task_id=task.id,
         agent_id=agent.id,
         idempotency_key=f"reward:{task.id}",
-        details={"base": base, "bonus": bonus, "rule_id": str(rule.id)},
+        details={"base": float(base), "bonus": float(bonus), "rule_id": str(rule.id)},
     )
     grant = RewardGrant(
         agent_id=agent.id,
@@ -655,11 +676,12 @@ async def transfer(
     actor: User,
     from_account_id: uuid.UUID,
     to_account_id: uuid.UUID,
-    amount_units: float,
+    amount_units: float | Decimal,
     comment: str = "",
     idempotency_key: str | None = None,
 ) -> Transaction:
     """Перевод между своими счетами или другому участнику."""
+    amount_units = D(amount_units)
     if amount_units <= 0:
         raise ValidationError("Сумма перевода должна быть положительной", code="transfer_invalid")
     source = (
@@ -708,6 +730,9 @@ async def withdraw_agent_earnings(
         raise PermissionDeniedError("Чужой агент", code="agent_forbidden")
     source = await agent_account(session, agent_id)
     target = await user_account(session, agent.owner_id)
+    amount_units = D(amount_units)
+    if amount_units <= 0:
+        raise ValidationError("Сумма вывода должна быть положительной", code="withdraw_invalid")
     return await post_transaction(
         session,
         kind=TransactionKind.withdrawal,
@@ -749,14 +774,14 @@ async def account_statement(
     ).scalar_one()
     return {
         "account": account,
-        "total_in": round(float(inflow), 4),
-        "total_out": round(abs(float(outflow)), 4),
+        "total_in": float(q4(inflow)),
+        "total_out": float(q4(abs(D(outflow)))),
         "entries": [
             {
                 "id": entry.id,
                 "transaction_id": entry.transaction_id,
-                "amount": entry.amount_units,
-                "balance_after": entry.balance_after,
+                "amount": float(D(entry.amount_units)),
+                "balance_after": float(D(entry.balance_after)),
                 "kind": transaction.kind.value,
                 "description": transaction.description,
                 "status": transaction.status.value,
@@ -859,20 +884,20 @@ async def economy_stats(session: AsyncSession) -> dict[str, Any]:
     return {
         "currency": CURRENCY,
         "transactions": {
-            kind.value: {"count": int(count), "volume": round(float(volume), 4)}
+            kind.value: {"count": int(count), "volume": float(q4(volume))}
             for kind, count, volume in by_kind
         },
         "accounts": {
             account_type.value: {
                 "count": int(count),
-                "balance": round(float(balance), 4),
+                "balance": float(q4(balance)),
             }
             for account_type, count, balance in accounts_by_type
         },
-        "held_budgets": {"count": int(held[0] or 0), "units": round(float(held[1] or 0.0), 4)},
+        "held_budgets": {"count": int(held[0] or 0), "units": float(q4(held[1]))},
         "rewards": {
             "count": int(rewards[0] or 0),
-            "units": round(float(rewards[1] or 0.0), 4),
+            "units": float(q4(rewards[1])),
         },
     }
 
@@ -896,12 +921,12 @@ async def user_economy(session: AsyncSession, user_id: uuid.UUID) -> dict[str, A
     return {
         "currency": CURRENCY,
         "account_id": account.id,
-        "balance_units": round(float(account.balance_units), 4),
+        "balance_units": float(q4(account.balance_units)),
         "agents": [
-            {"agent_id": row[0], "name": row[1], "balance_units": round(float(row[2]), 4)}
+            {"agent_id": row[0], "name": row[1], "balance_units": float(q4(row[2]))}
             for row in agent_balances
         ],
-        "rewards": {"count": int(rewards[0] or 0), "units": round(float(rewards[1] or 0.0), 4)},
+        "rewards": {"count": int(rewards[0] or 0), "units": float(q4(rewards[1]))},
     }
 
 
@@ -949,7 +974,7 @@ async def transactions_page(
                 )
             )
         ).scalar_one()
-        result.append((transaction, round(float(signed), 4)))
+        result.append((transaction, float(q4(signed))))
     return result
 
 

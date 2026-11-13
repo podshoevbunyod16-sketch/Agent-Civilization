@@ -39,14 +39,22 @@ export default function Conversations() {
     setLiveMessages([])
     setLive(false)
     if (!selectedId) return
-    const token = localStorage.getItem('ac.access_token')
-    if (!token) return
 
-    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const url = `${proto}://${window.location.host}/api/v1/ws/conversations/${selectedId}?token=${encodeURIComponent(token)}`
+    let closed = false
     let socket: WebSocket | null = null
-    try {
-      socket = new WebSocket(url)
+    const connect = async () => {
+      let ticket: string | null = null
+      try {
+        ticket = (await api.wsTicket()).ticket
+      } catch {
+        setLive(false)
+        return
+      }
+      if (closed) return
+      const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
+      const url = `${proto}://${window.location.host}/api/v1/ws/conversations/${selectedId}?ticket=${encodeURIComponent(ticket)}`
+      try {
+        socket = new WebSocket(url)
       socket.onopen = () => setLive(true)
       socket.onmessage = (event) => {
         const payload = JSON.parse(event.data as string) as {
@@ -83,11 +91,14 @@ export default function Conversations() {
           return next
         })
       }
-      socket.onclose = () => setLive(false)
-    } catch {
-      setLive(false)
+        socket.onclose = () => setLive(false)
+      } catch {
+        setLive(false)
+      }
     }
+    void connect()
     return () => {
+      closed = true
       socket?.close()
       setLive(false)
     }

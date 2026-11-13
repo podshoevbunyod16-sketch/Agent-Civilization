@@ -34,8 +34,14 @@ class Settings(BaseSettings):
     secret_key: str = "dev-insecure-secret-key-change-me-please-32"
     access_token_ttl_seconds: int = 900
     refresh_token_ttl_seconds: int = 60 * 60 * 24 * 30
+    ws_ticket_ttl_seconds: int = 60
     password_min_length: int = 10
     node_request_max_skew_seconds: int = 60
+    # Доверенные обратные прокси (точные IP или CIDR). Пока пусто —
+    # заголовок X-Forwarded-For НЕ доверяется (anti-spoofing rate limit / аудит).
+    trusted_proxies: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    # Fail-closed anti-replay, если Redis недоступен (в production включён по умолчанию)
+    anti_replay_fail_closed: bool | None = None
 
     # ── Datastores ────────────────────────────────────────────────────
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/agent_civilization"
@@ -94,7 +100,7 @@ class Settings(BaseSettings):
     registry_page_size_default: int = 20
     registry_page_size_max: int = 100
 
-    @field_validator("cors_origins", mode="before")
+    @field_validator("cors_origins", "trusted_proxies", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:
         if isinstance(value, str):
@@ -110,6 +116,12 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.environment == "production"
 
+    def anti_replay_closed(self) -> bool:
+        """Fail-closed anti-replay: по умолчанию в production/staging, иначе open."""
+        if self.anti_replay_fail_closed is not None:
+            return self.anti_replay_fail_closed
+        return self.environment in {"staging", "production"}
+
     def validate_for_runtime(self) -> None:
         """Проверки, которые должны падать при старте в продакшене."""
         if self.is_production:
@@ -117,6 +129,11 @@ class Settings(BaseSettings):
                 raise RuntimeError("SECRET_KEY must be set to a strong value in production")
             if self.debug:
                 raise RuntimeError("DEBUG must be false in production")
+            if self.sandbox_backend != "docker":
+                raise RuntimeError("SANDBOX_BACKEND must be 'docker' in production")
+            if not self.internal_service_token:
+                logger_note = "INTERNAL_SERVICE_TOKEN не задан: внутренний API доставки отключён"
+                raise RuntimeError(logger_note)
 
 
 @lru_cache

@@ -31,6 +31,7 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
@@ -41,6 +42,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Index,
+    Numeric,
     String,
     UniqueConstraint,
     text,
@@ -116,9 +118,13 @@ class Account(BaseModel):
         PG_UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), index=True
     )
     currency: Mapped[str] = mapped_column(String(8), default="ACU", nullable=False)
-    balance_units: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    balance_units: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal("0.00"),
+        nullable=False,
+    )
     # Разрешённый минус (только treasury)
-    credit_limit: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    credit_limit: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal("0.00"),
+        nullable=False,
+    )
     label: Mapped[str] = mapped_column(String(120), default="", nullable=False)
 
     __table_args__ = (
@@ -156,7 +162,7 @@ class Transaction(BaseModel):
         default=TransactionStatus.posted,
         nullable=False,
     )
-    amount_units: Mapped[float] = mapped_column(Float, nullable=False)
+    amount_units: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     currency: Mapped[str] = mapped_column(String(8), default="ACU", nullable=False)
     description: Mapped[str] = mapped_column(String(280), default="", nullable=False)
 
@@ -201,9 +207,9 @@ class LedgerEntry(BaseModel):
     account_id: Mapped[uuid.UUID] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="RESTRICT"), index=True
     )
-    amount_units: Mapped[float] = mapped_column(Float, nullable=False)
+    amount_units: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     # Баланс счёта после проводки — снимок для аудита и проверки сходимости
-    balance_after: Mapped[float] = mapped_column(Float, nullable=False)
+    balance_after: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     note: Mapped[str] = mapped_column(String(200), default="", nullable=False)
 
     __table_args__ = (Index("ix_ledger_account_created", "account_id", "created_at"),)
@@ -227,10 +233,16 @@ class TaskBudget(BaseModel):
         PG_UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="SET NULL")
     )
 
-    budget_units: Mapped[float] = mapped_column(Float, nullable=False)
-    spent_units: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    fee_units: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    released_units: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    budget_units: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    spent_units: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal("0.00"),
+        nullable=False,
+    )
+    fee_units: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal("0.00"),
+        nullable=False,
+    )
+    released_units: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal("0.00"),
+        nullable=False,
+    )
 
     status: Mapped[HoldStatus] = mapped_column(
         Enum(HoldStatus, name="hold_status", native_enum=False, length=20),
@@ -260,14 +272,20 @@ class RewardRule(BaseModel):
 
     name: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
     # Награда за результат с вердиктом verified
-    verified_reward_units: Mapped[float] = mapped_column(Float, default=2.0, nullable=False)
+    verified_reward_units: Mapped[Decimal] = mapped_column(
+            Numeric(18, 4), default=Decimal("2.00"), nullable=False
+        )
     # Множитель за каждую подтверждённую возможность (уровень × множитель)
-    capability_bonus_units: Mapped[float] = mapped_column(Float, default=0.5, nullable=False)
+    capability_bonus_units: Mapped[Decimal] = mapped_column(
+            Numeric(18, 4), default=Decimal("0.50"), nullable=False
+        )
     # Доля платформы от оплаты задания
     platform_fee_ratio: Mapped[float] = mapped_column(Float, default=0.05, nullable=False)
     # Порог репутации, ниже которого награда не начисляется
     min_reputation: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    daily_cap_units: Mapped[float] = mapped_column(Float, default=1000.0, nullable=False)
+    daily_cap_units: Mapped[Decimal] = mapped_column(
+            Numeric(18, 4), default=Decimal("1000.00"), nullable=False
+        )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     details: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
@@ -298,9 +316,13 @@ class RewardGrant(BaseModel):
     transaction_id: Mapped[uuid.UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("transactions.id", ondelete="SET NULL")
     )
-    amount_units: Mapped[float] = mapped_column(Float, nullable=False)
-    base_units: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    bonus_units: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    amount_units: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    base_units: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal("0.00"),
+        nullable=False,
+    )
+    bonus_units: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal("0.00"),
+        nullable=False,
+    )
     reason: Mapped[str] = mapped_column(String(200), default="", nullable=False)
     granted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

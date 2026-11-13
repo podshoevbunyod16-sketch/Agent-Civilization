@@ -19,7 +19,7 @@ from jwt.exceptions import InvalidTokenError
 from app.core.config import settings
 
 ALGORITHM = "HS256"
-TokenType = Literal["access", "refresh"]
+TokenType = Literal["access", "refresh", "ws"]
 
 # ── Пароли (PBKDF2-HMAC-SHA256, без внешних зависимостей) ──────────────
 _PBKDF2_ROUNDS = 260_000
@@ -95,11 +95,12 @@ def create_token(
     """Возвращает (jwt, expires_at, jti)."""
     now = datetime.now(UTC)
     if ttl_seconds is None:
-        ttl_seconds = (
-            settings.access_token_ttl_seconds
-            if token_type == "access"
-            else settings.refresh_token_ttl_seconds
-        )
+        ttl_by_type = {
+            "access": settings.access_token_ttl_seconds,
+            "refresh": settings.refresh_token_ttl_seconds,
+            "ws": settings.ws_ticket_ttl_seconds,
+        }
+        ttl_seconds = ttl_by_type[token_type]
     expires_at = now + timedelta(seconds=ttl_seconds)
     jti = uuid.uuid4().hex
     payload: dict[str, Any] = {

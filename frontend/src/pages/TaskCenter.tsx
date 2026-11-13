@@ -60,10 +60,17 @@ export default function TaskCenter() {
     setEvents([])
     setLive(false)
 
-    const token = localStorage.getItem('ac.access_token')
-    if (token) {
+    const connect = async () => {
+      let ticket: string | null = null
+      try {
+        ticket = (await api.wsTicket()).ticket
+      } catch {
+        setLive(false)
+        return
+      }
+      if (closed) return
       const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-      const url = `${proto}://${window.location.host}/api/v1/ws/tasks/${id}?token=${encodeURIComponent(token)}`
+      const url = `${proto}://${window.location.host}/api/v1/ws/tasks/${id}?ticket=${encodeURIComponent(ticket)}`
       try {
         socket = new WebSocket(url)
         socket.onopen = () => setLive(true)
@@ -104,6 +111,7 @@ export default function TaskCenter() {
         setLive(false)
       }
     }
+    void connect()
 
     return () => {
       closed = true

@@ -155,12 +155,17 @@ async def publish(channel: str, message: str) -> int:
 async def consume_once(key: str, ttl_seconds: int) -> bool:
     """Anti-replay для подписей узлов: True — если ключ увиден впервые.
 
-    При недоступном Redis запрос пропускается (fail-open) и инцидент
-    логируется: доступность важнее строгой защиты от replay, а подпись
-    и временное окно всё равно проверяются.
+    При недоступном Redis поведение определяется окружением:
+    * development/test — запрос пропускается (fail-open), инцидент логируется;
+    * staging/production (или ANTI_REPLAY_FAIL_CLOSED=true) — отказ (fail-closed).
     """
     ok = await _exec(lambda c: c.set(f"once:{key}", "1", nx=True, ex=ttl_seconds))
     if ok is UNAVAILABLE:
+        from app.core.config import settings
+
+        if settings.anti_replay_closed():
+            logger.error("anti_replay_unavailable_closed", extra={"key_present": True})
+            return False
         logger.warning("anti_replay_degraded", extra={"key_present": True})
         return True
     return bool(ok)
