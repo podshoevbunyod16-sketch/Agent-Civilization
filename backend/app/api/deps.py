@@ -32,12 +32,37 @@ class RequestContext:
     user_agent: str | None
 
 
+def _is_trusted_proxy(address: str) -> bool:
+    """Точный IP или CIDR-диапазон из settings.trusted_proxies."""
+    import ipaddress
+
+    try:
+        peer = ipaddress.ip_address(address)
+    except ValueError:
+        return False
+    for entry in settings.trusted_proxies:
+        entry = entry.strip()
+        if not entry:
+            continue
+        try:
+            if "/" in entry:
+                if peer in ipaddress.ip_network(entry, strict=False):
+                    return True
+            elif peer == ipaddress.ip_address(entry):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def client_ip(request: Request) -> str:
+    peer = (request.client.host if request.client else "unknown")[:64]
+    # X-Forwarded-For доверяем ТОЛЬКО если прямой узел — доверенный прокси
+    # из конфигурации. Иначе заголовок игнорируем: он подделывается свободно.
     forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        # Первый адрес в цепочке — клиент (за доверенным прокси)
+    if forwarded and settings.trusted_proxies and _is_trusted_proxy(peer):
         return forwarded.split(",")[0].strip()[:64]
-    return (request.client.host if request.client else "unknown")[:64]
+    return peer
 
 
 async def get_request_context(request: Request) -> RequestContext:

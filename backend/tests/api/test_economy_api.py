@@ -16,6 +16,8 @@ import uuid
 from app.services.economy import SIGNUP_GRANT_UNITS
 from tests.conftest import create_published_agent, register_node_client
 
+GRANT = float(SIGNUP_GRANT_UNITS)  # JSON-числа приходят как float
+
 
 async def _finished_task(client, user, agent: dict, *, budget: float | None = None) -> dict:
     payload: dict = {
@@ -147,7 +149,7 @@ class TestTransfer:
             json={
                 "from_account_id": source["account_id"],
                 "to_account_id": target["account_id"],
-                "amount_units": SIGNUP_GRANT_UNITS + 1,
+                "amount_units": GRANT + 1,
             },
             headers=user.headers,
         )
@@ -258,7 +260,7 @@ class TestTaskBudget:
         agent = await create_published_agent(client, user)
         response = await client.post(
             "/api/v1/tasks",
-            json={"agent_id": agent["id"], "budget_units": SIGNUP_GRANT_UNITS + 50},
+            json={"agent_id": agent["id"], "budget_units": GRANT + 50},
             headers=user.headers,
         )
         assert response.status_code == 422
@@ -488,7 +490,7 @@ class TestWithdrawal:
         money = (await client.get("/api/v1/economy/me", headers=user.headers)).json()
         # Бюджет 20: работа стоила 4, остаток 16 вернулся заказчику.
         # Итог: 100 − 4 (фактическая стоимость) + 3 (вывод) = 99
-        assert money["balance_units"] == SIGNUP_GRANT_UNITS - 4 + 3.0
+        assert money["balance_units"] == GRANT - 4 + 3.0
         earned = next(i for i in money["agents"] if i["agent_id"] == agent["id"])
         assert earned["balance_units"] == 0.8
 
@@ -555,7 +557,7 @@ class TestLedgerIntegrity:
         # заморозка −20, выплата агенту +3.8, возврат +16 → 99.8.
         # Чистая стоимость работы — 4.0, из них 0.2 комиссия платформы.
         total = sum(item["impact"] for item in response.json())
-        assert abs(total - (SIGNUP_GRANT_UNITS - 20 + 3.8 + 16)) < 1e-6
+        assert abs(total - (GRANT - 20 + 3.8 + 16)) < 1e-6
         settle = next(
             item["transaction"]
             for item in response.json()

@@ -5,9 +5,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
-from app.api.deps import DbSession
+from app.api.deps import CurrentUser, DbSession
+from app.core.config import settings
 from app.core.events import event_bus
-from app.core.security import TokenError, decode_token
+from app.core.security import TokenError, create_token, decode_token
 from app.db.models.user import User
 from app.services import auth as auth_service
 from app.services import gateway
@@ -15,20 +16,35 @@ from app.services import gateway
 router = APIRouter(tags=["realtime"])
 
 
+@router.post("/ws/ticket", summary="Одноразовый тикет для WebSocket (TTL 60 с)")
+async def issue_ws_ticket(user: CurrentUser) -> dict:
+    """Короткоживущий тикет для браузерного WebSocket.
+
+    Браузер не может слать заголовок Authorization при открытии WS, поэтому
+    вместо access-токена в query-параметре (он утёк бы в логи и историю)
+    клиент сначала получает здесь одноразовый тикет и передаёт его как
+    `?ticket=...`. Access-токен в query не принимается.
+    """
+    ticket, expires_at, _jti = create_token(
+        str(user.id), token_type="ws", ttl_seconds=settings.ws_ticket_ttl_seconds
+    )
+    return {"ticket": ticket, "expires_in": settings.ws_ticket_ttl_seconds}
+
+
 @router.websocket("/ws/tasks/{task_id}")
 async def task_events_socket(
     websocket: WebSocket,
     task_id: uuid.UUID,
-    token: Annotated[str | None, Query()] = None,
+    ticket: Annotated[str | None, Query()] = None,
 ) -> None:
     """Поток событий задания.
 
-    Аутентификация: access-токен в query (`?token=...`), так как
-    браузерный WebSocket API не поддерживает произвольные заголовки.
+    Аутентификация: одноразовый WS-тикет в query (`?ticket=...`) из
+    `POST /api/v1/ws/ticket`. Access-токен в query не принимается.
     """
     await websocket.accept()
-    if not token:
-        await websocket.close(code=4401, reason="token required")
+    if not ticket:
+        await websocket.close(code=4401, reason="ticket required")
         return
 
     from app.db.session import get_session_factory
@@ -36,10 +52,10 @@ async def task_events_socket(
     factory = get_session_factory()
     async with factory() as session:
         try:
-            payload = decode_token(token, expected_type="access")
+            payload = decode_token(ticket, expected_type="ws")
             user = await auth_service.get_user_by_id(session, uuid.UUID(payload["sub"]))
         except (TokenError, ValueError, KeyError):
-            await websocket.close(code=4401, reason="invalid token")
+            await websocket.close(code=4401, reason="invalid ticket")
             return
         if user is None or not user.is_active:
             await websocket.close(code=4401, reason="invalid user")
@@ -90,7 +106,7 @@ async def task_events_socket(
 async def conversation_socket(
     websocket: WebSocket,
     conversation_id: uuid.UUID,
-    token: Annotated[str | None, Query()] = None,
+    ticket: Annotated[str | None, Query()] = None,
 ) -> None:
     """Поток сообщений диалога в реальном времени.
 
@@ -104,8 +120,8 @@ async def conversation_socket(
     from app.services import messaging as messaging_service
 
     await websocket.accept()
-    if not token:
-        await websocket.close(code=4401, reason="token required")
+    if not ticket:
+        await websocket.close(code=4401, reason="ticket required")
         return
 
     from app.db.session import get_session_factory
@@ -113,10 +129,10 @@ async def conversation_socket(
     factory = get_session_factory()
     async with factory() as session:
         try:
-            payload = decode_token(token, expected_type="access")
+            payload = decode_token(ticket, expected_type="ws")
             user = await auth_service.get_user_by_id(session, uuid.UUID(payload["sub"]))
         except (TokenError, ValueError, KeyError):
-            await websocket.close(code=4401, reason="invalid token")
+            await websocket.close(code=4401, reason="invalid ticket")
             return
         if user is None or not user.is_active:
             await websocket.close(code=4401, reason="invalid user")

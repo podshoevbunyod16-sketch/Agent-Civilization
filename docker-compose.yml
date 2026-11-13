@@ -53,6 +53,10 @@ services:
       CORS_ORIGINS: http://localhost:5173,http://localhost:8000
       SANDBOX_BACKEND: ${SANDBOX_BACKEND:-subprocess}
       RATE_LIMIT_ENABLED: "true"
+      # Production: задайте в .env своего окружения (обязателен в production).
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-}
+      # Доверенные прокси, напр. "10.0.0.0/8" (пусто — X-Forwarded-For не доверяется).
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       LOG_LEVEL: INFO
     ports:
       - "8000:8000"

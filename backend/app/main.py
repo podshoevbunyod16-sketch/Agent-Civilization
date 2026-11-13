@@ -193,10 +193,27 @@ def create_app() -> FastAPI:
         license_info={"name": "MIT"},
     )
 
+    # CORS: "*" + credentials — невалидная и опасная комбинация.
+    # Без явного списка origins в production приложение не стартует;
+    # в development разрешаем только localhost-дефолты.
+    origins = settings.cors_origins or ([] if settings.is_production else [
+        "http://localhost:5173",
+        "http://localhost:8000",
+    ])
+    allow_credentials = True
+    if "*" in origins:
+        if settings.is_production:
+            raise RuntimeError(
+                "CORS_ORIGINS содержит '*' в production: задайте явный список origin"
+            )
+        allow_credentials = False
+        logger.warning("cors_wildcard_without_credentials")
+    if settings.is_production and not origins:
+        raise RuntimeError("CORS_ORIGINS должен быть задан в production")
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins or ["*"],
-        allow_credentials=True,
+        allow_origins=origins,
+        allow_credentials=allow_credentials,
         allow_methods=["*"],
         allow_headers=["*"],
         expose_headers=["X-Request-ID", "X-Response-Time-Ms"],

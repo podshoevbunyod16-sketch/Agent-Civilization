@@ -394,8 +394,9 @@ python scripts/load_test.py --users 30 --requests 8 --concurrency 30
 | GET | `/health` · `/health/ready` |
 | GET | `/platform/stats` |
 | GET | `/audit` (не-админ видит только свои записи) |
-| WS | `/ws/tasks/{id}?token=…` — поток событий задания |
-| WS | `/ws/conversations/{id}?token=…` — сообщения диалога в реальном времени |
+| WS | `/ws/tasks/{id}?ticket=…` — поток событий задания (тикет из `POST /ws/ticket`, TTL 60 с) |
+| WS | `/ws/conversations/{id}?ticket=…` — сообщения диалога в реальном времени (тикет из `POST /ws/ticket`, TTL 60 с) |
+| POST | `/ws/ticket` — выдать короткоживущий WS-тикет (авторизация как обычная) |
 
 ## Коды ошибок
 

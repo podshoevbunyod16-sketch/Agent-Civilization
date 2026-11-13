@@ -54,20 +54,7 @@ export default function DeveloperPanel() {
   )
 
   async function fetchAuditLog() {
-    const response = await fetch('/api/v1/audit?page_size=25', {
-      headers: { Authorization: `Bearer ${localStorage.getItem('ac.access_token') ?? ''}` },
-    })
-    if (!response.ok) throw new Error('Не удалось загрузить журнал аудита')
-    return (await response.json()) as {
-      items: Array<{
-        id: string
-        action: string
-        target_type: string
-        target_id: string | null
-        outcome: string
-        created_at: string
-      }>
-    }
+    return api.auditLog(25)
   }
 
   function autoSlug(name: string) {

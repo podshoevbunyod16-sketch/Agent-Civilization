@@ -918,6 +918,15 @@ export interface ApiKeyCreated extends ApiKeyInfo {
   api_key: string
 }
 
+export interface AuditEntry {
+  id: string
+  action: string
+  target_type: string
+  target_id: string | null
+  outcome: string
+  created_at: string
+}
+
 export const api = {
   async register(email: string, password: string, displayName: string): Promise<TokenPair> {
     const data = await request<TokenPair>('/auth/register', {
@@ -953,8 +962,18 @@ export const api = {
     return request<UserPublic>('/auth/me', { auth: true, signal })
   },
 
+  // Короткоживущий (60 с) тикет для браузерного WebSocket. Access-токен
+  // в query-параметре больше не применяется.
+  wsTicket(): Promise<{ ticket: string; expires_in: number }> {
+    return request('/ws/ticket', { method: 'POST', auth: true })
+  },
+
   myAgents(signal?: AbortSignal): Promise<AgentListItem[]> {
     return request<AgentListItem[]>('/auth/me/agents', { auth: true, signal })
+  },
+
+  auditLog(pageSize = 25, signal?: AbortSignal): Promise<Page<AuditEntry>> {
+    return request<Page<AuditEntry>>(`/audit?page_size=${pageSize}`, { auth: true, signal })
   },
 
   apiKeys(signal?: AbortSignal): Promise<ApiKeyInfo[]> {

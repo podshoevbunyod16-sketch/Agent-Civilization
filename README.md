@@ -32,7 +32,7 @@
 ### Проверено фактически
 
 ```
-376 passed  (unit + API + security + integration + e2e worker + A2A-доставка + доверие + экономика + экосистема + эксплуатация)
+400 passed  (unit + API + security + integration + e2e worker + A2A-доставка + доверие + экономика + экосистема + эксплуатация + production-hardening)
 ruff: All checks passed
 ```
 
@@ -141,8 +141,8 @@ Worker подписывает каждый запрос HMAC-SHA256, подтв�
 * [ADR-0003](docs/adr/0003-sandboxed-execution.md) — исполнение агентов только в песочнице
 * [ADR-0004](docs/adr/0004-task-queue-pull-lease.md) — очередь на pull-модели с арендой и fencing
 * [ADR-0005](docs/adr/0005-stateless-api-and-redis.md) — stateless API, состояние в PostgreSQL/Redis
-* [ADR-0006](docs/adr/0006-a2a-delivery-queues.md) — доставка сообщений A2A: очереди, аренда, дедупликация
-* [ADR-0007](docs/adr/0007-orchestration-task-engine.md) — движок оркестрации: декомпозиция, зависимости, повторы
+* [ADR-0006](docs/adr/0006-a2a-delivery-semantics.md) — доставка сообщений A2A: очереди, аренда, дедупликация
+* [ADR-0007](docs/adr/0007-orchestration-plan-dag.md) — движок оркестрации: декомпозиция, зависимости, повторы
 * [ADR-0008](docs/adr/0008-verification-trust-reputation.md) — проверка результата, доверие и репутация
 * [ADR-0009](docs/adr/0009-economy-double-entry.md) — экономика: двойная запись, бюджеты, идемпотентность
 * [ADR-0010](docs/adr/0010-open-ecosystem.md) — открытая экосистема: SDK, проверка совместимости, интеграции

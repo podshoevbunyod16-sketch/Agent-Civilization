@@ -460,10 +460,10 @@ async def test_conversation_websocket_snapshot_and_live_event(client, user):
     created = (await _send(client, user, sender, recipient)).json()
     conversation_id = created["conversation_id"]
 
-    token = user.tokens["access_token"] if hasattr(user, "tokens") else user.access_token
+    ws_ticket = (await client.post("/api/v1/ws/ticket", headers=user.headers)).json()["ticket"]
     with TestClient(fastapi_app) as sync_client:
         with sync_client.websocket_connect(
-            f"/api/v1/ws/conversations/{conversation_id}?token={token}"
+            f"/api/v1/ws/conversations/{conversation_id}?ticket={ws_ticket}"
         ) as ws:
             snapshot = ws.receive_json()
             assert snapshot["type"] == "snapshot"
@@ -495,12 +495,12 @@ async def test_conversation_websocket_denies_foreign_user(client, user, other_us
 
     sender, recipient = await _two_agents(client, user)
     conversation_id = (await _send(client, user, sender, recipient)).json()["conversation_id"]
-    token = other_user.tokens["access_token"] if hasattr(other_user, "tokens") else other_user.access_token
+    ws_ticket = (await client.post("/api/v1/ws/ticket", headers=other_user.headers)).json()["ticket"]
 
     with TestClient(fastapi_app) as sync_client:
         with pytest.raises(WebSocketDisconnect) as exc:
             with sync_client.websocket_connect(
-                f"/api/v1/ws/conversations/{conversation_id}?token={token}"
+                f"/api/v1/ws/conversations/{conversation_id}?ticket={ws_ticket}"
             ) as ws:
                 ws.receive_json()
     assert exc.value.code == 4403
