@@ -100,6 +100,15 @@ class Settings(BaseSettings):
     registry_page_size_default: int = 20
     registry_page_size_max: int = 100
 
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _async_database_driver(cls, value: object) -> object:
+        if isinstance(value, str) and value.startswith(("postgres://", "postgresql://")):
+            return value.replace("postgres://", "postgresql+asyncpg://", 1).replace(
+                "postgresql://", "postgresql+asyncpg://", 1
+            )
+        return value
+
     @field_validator("cors_origins", "trusted_proxies", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:

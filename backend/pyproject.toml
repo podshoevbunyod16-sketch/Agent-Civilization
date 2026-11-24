@@ -28,6 +28,7 @@ dev = [
   "pytest-cov>=4.1",
   "ruff>=0.3",
   "fakeredis>=2.21",
+  "pgserver>=0.1.4",
 ]
 
 [tool.pytest.ini_options]
