@@ -1,23 +1,32 @@
 # syntax=docker/dockerfile:1
-FROM python:3.12-slim AS base
+FROM node:22-alpine AS frontend-build
+WORKDIR /web
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+FROM python:3.12-slim AS app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    FRONTEND_DIST_DIR=/app/frontend_dist
 
-WORKDIR /app
+WORKDIR /app/backend
 
 # Системные зависимости минимальны: asyncpg/psycopg имеют wheels
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml ./
-RUN pip install --upgrade pip setuptools && pip install ".[dev]"
+COPY backend/pyproject.toml ./
+COPY backend/app ./app
+RUN pip install --upgrade pip setuptools && pip install .
 
-COPY alembic.ini ./
-COPY alembic ./alembic
-COPY app ./app
+COPY backend/alembic.ini ./
+COPY backend/alembic ./alembic
+COPY --from=frontend-build /web/dist /app/frontend_dist
 
 # Непривилегированный пользователь
 RUN useradd --create-home --uid 10001 appuser && chown -R appuser:appuser /app

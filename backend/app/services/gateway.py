@@ -313,6 +313,9 @@ async def claim_tasks(
             TaskAssignment(
                 task_id=task.id,
                 agent_id=task.agent_id,
+                agent_slug=agent.slug,
+                agent_owner_id=agent.owner_id,
+                requester_id=task.requester_id,
                 agent_version_id=task.agent_version_id,
                 entrypoint_type=version.entrypoint_type.value,
                 entrypoint_config=agent_service.pick_entrypoint_config(

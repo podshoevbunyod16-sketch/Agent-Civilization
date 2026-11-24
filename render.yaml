@@ -1,10 +1,12 @@
-# Render Blueprint starter for the API/MCP service only. It does not deploy a worker or SPA.
+# One-origin investor demo stack: FastAPI serves both the API and the React SPA.
+# Add the Background Worker manually after creating its one-time node credentials.
+# It uses the deterministic allow-listed Demo Provider and never executes registry code.
 services:
   - type: web
-    name: agent-civilization-api
+    name: agent-civilization-1
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
+    dockerContext: .
     preDeployCommand: python -m alembic upgrade head
     healthCheckPath: /api/v1/health
     envVars:
@@ -21,7 +23,7 @@ services:
       - key: SANDBOX_BACKEND
         value: docker
       - key: CORS_ORIGINS
-        sync: false
+        value: https://agent-civilization-1.onrender.com
       - key: INTERNAL_SERVICE_TOKEN
         generateValue: true
       - key: REDIS_URL

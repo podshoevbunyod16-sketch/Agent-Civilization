@@ -1,35 +1,35 @@
 # Статус реализации роадмапа
 
-> **Актуально на 2026-11-24, ветка демо-арены.** В этой итерации добавлены
-> корневой MCP endpoint `/mcp` (anonymous initialize/discovery, authenticated
-> user tools, resources), live Demo Arena UI, реальный plan launch, demo runner
-> script и MCP connection/deployment docs. Базовая проверка до изменений:
-> Baseline: **400 passed** и Ruff clean (pytest потребовал установить dev deps + `pgserver`).
-> После Swarm Rebuild полный suite: **415 passed**; `ruff check app tests` clean,
-> frontend typecheck/build clean, 12 Vitest tests passed.
+> **Актуально на 2026-11-24, ветка Render demo setup.** Backend suite: **426 passed,
+> 2 warnings**; `ruff check app tests` clean. Frontend typecheck/build и 12 Vitest
+> tests прошли. Docker image не собирался локально — Docker daemon в sandbox
+> отсутствует; workflow CI проверяет сборку образа.
 >
 > **Что реально работает:** `/mcp` JSON-RPC `initialize`, `tools/list`,
-> `tools/call`, `resources/list/read`; тесты проверяют anonymous discovery и
-> authenticated balance. Демо-арена использует реальные `/agents`, `/platform/stats`,
-> `/plans`, `/tasks`, `/economy/*` API. `scripts/demo.sh` проверен в этом Linux
-> sandbox без Docker через `pgserver` fallback: миграции, API, seed, worker и UI
-> запустились; `scripts/mcp_smoke_test.py` создал задачу через реальный API key.
+> `tools/call`, `resources/list/read`; UI использует реальные API/БД данные для
+> реестра, планов, задач и статусов. Новый Render Blueprint собирает React SPA и
+> FastAPI в одном Docker web service и запускает миграции; Render Postgres
+> привязан через `DATABASE_URL`. `scripts/seed_render_demo.py` создаёт только 10
+> опубликованных DEMO AGENT от аккаунта, уже созданного пользователем; он не
+> создаёт demo-логин, node credentials или задачи.
 >
-> **Demo-only:** seed agents — 10 deterministic executable examples, UI маркирует
-> их `DEMO AGENT`; Swarm Rebuild запускает пятишаговый prompt→Tkinter→review
-> DAG. Builder генерирует код из фиксированного шаблона, не из LLM; браузерный
-> canvas показывает структурную JSON-preview, а не исполняет Tkinter. Локальный
-> пароль фиксированный.
-> Они не являются LLM и не вызывают внешние инструменты.
+> **Demo agents and tools:** демо-агенты используют детерминированный Demo Provider,
+> не LLM. Render-friendly `DemoNodeWorker` поддерживает только встроенный allow-list;
+> код из agent registry и shell-команды не исполняются. `researcher-prime` вызывает
+> настоящий Tavily `web_search` в worker-процессе и возвращает только источники от
+> провайдера; без ключа задача завершается явной ошибкой. Поиск ограничен задачами
+> владельца seed-агента. Tkinter source проходит реальную `compile()` syntax check,
+> но не исполняется и не открывает GUI. Worker добавляется вручную после создания
+> node, потому что credentials выдаются однократно; шаги описаны в
+> `docs/RENDER_DEMO_RU.md`. Неограниченный bash/CLI и настоящая LLM-интеграция не
+> реализованы.
 >
-> **Не сделано / не подтверждено:** 2 из 33 MCP tool definitions (`run_in_sandbox`,
-> `search_integrations`) отвечают явной ошибкой not-enabled; внешних MCP-серверов
-> подключено **0** (внешних инструментов **0**); API keys не имеют read-only/write
-> scopes; stdio gateway, безопасный shell allowlist, внешнее deployment и
-> Playwright capture не прогнаны. Subprocess fallback не гарантирует сетевую
-> изоляцию. `render.yaml` — blueprint-заготовка API без SPA/worker, production
-> Docker runner требует Docker daemon. Смотрите `docs/MCP_CONNECT.md` и
-> `docs/SECURITY.md`.
+> **Не подтверждено:** новый Blueprint не развёртывался в аккаунте пользователя;
+> Tavily API key не проверялся против production; публичный deployment и
+> пользовательский Render hostname не проверялись. Из 33 MCP tool definitions
+> два (`run_in_sandbox`, `search_integrations`) остаются not-enabled; внешних MCP
+> серверов **0**. Subprocess fallback не является сетевой sandbox. Смотрите
+> `docs/RENDER_DEMO_RU.md`, `docs/MCP_CONNECT.md` и `docs/SECURITY.md`.
 >
 > Следующие абзацы — исторический статус ветки 2026-11-13, не отчет о сегодняшней
 > демо-итерации.
