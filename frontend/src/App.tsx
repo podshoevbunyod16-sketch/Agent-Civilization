@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { useAuth } from '@/lib/auth'
 import Dashboard from '@/pages/Dashboard'
+import DemoArena from '@/pages/DemoArena'
 import AgentsCatalog from '@/pages/AgentsCatalog'
 import AgentDetail from '@/pages/AgentDetail'
 import TaskCenter from '@/pages/TaskCenter'
@@ -22,7 +23,7 @@ const NAV_GROUPS = [
   {
     title: 'Основное',
     links: [
-      { to: '/', label: 'Главная', icon: '⌂', end: true },
+      { to: '/', label: 'Демо-арена', icon: '⌘', end: true },
       { to: '/agents', label: 'Каталог агентов', icon: '◎' },
     ],
   },
@@ -159,7 +160,8 @@ export default function App() {
 
       <main className="main">
         <Routes>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={<DemoArena />} />
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/agents" element={<AgentsCatalog />} />
           <Route path="/agents/:id" element={<AgentDetail />} />
           <Route path="/conversations" element={<Conversations />} />
