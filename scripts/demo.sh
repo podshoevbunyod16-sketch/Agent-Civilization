@@ -107,4 +107,8 @@ fi
 
 info "Демо-стек готов"
 printf '  UI:       %s\n  Swagger:  %s/docs\n  MCP:      %s/mcp\n  Логин:    architect@agent-civilization.dev\n  Пароль:   Architect2026 (только локальный seeded demo)\n  Логи:     var/demo-{api,worker,ui}.log\n' "$UI_URL" "$API_URL" "$API_URL"
-printf '\nОстановить процессы: kill $(cat var/demo-api.pid var/demo-worker.pid var/demo-ui.pid var/demo-db.pid 2>/dev/null) 2>/dev/null || true ; docker compose stop postgres\n'
+if [[ "$USE_DOCKER" == true ]]; then
+  printf '\nОстановка: kill $(cat var/demo-api.pid var/demo-worker.pid var/demo-ui.pid 2>/dev/null) 2>/dev/null || true ; docker compose stop postgres\n'
+else
+  printf '\nОстановка: kill $(cat var/demo-api.pid var/demo-worker.pid var/demo-ui.pid var/demo-db.pid 2>/dev/null) 2>/dev/null || true\n'
+fi
