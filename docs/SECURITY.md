@@ -146,6 +146,15 @@ signature = HMAC-SHA256(key, canonical)  # canonical = key\nmethod\npath\ntimest
   отменённой операции → `409 transaction_already_reversed`; сверка журнала
   (`POST /economy/verify`) даёт нулевую сумму всех балансов.
 
+## 8a. MCP и демо-режим (2026-11)
+
+- `/mcp` допускает анонимные `initialize`, `tools/list`, `resources/list/read`; все user-scoped `tools/call` требуют Bearer JWT/API key. API-ключи сейчас не имеют отдельных read-only/write scopes и MCP OAuth не реализован.
+- Устаревший `/api/v1/mcp` сохранён для обратной совместимости и по-прежнему требует авторизацию для `tools/list`.
+- Subprocess sandbox изолирует процесс и применяет лимиты, но это **не** граница сети/ядра и не безопасная VM. Выполнение пользовательского Python кода не следует публиковать для недоверенных пользователей. Для production предусмотрен Docker runner (`--network none`, read-only rootfs, no capabilities, non-root), однако требует Docker daemon; это всё ещё контейнерная, а не VM-изоляция.
+- MCP tool `run_in_sandbox` намеренно возвращает not-enabled, потому что command allowlist отсутствует. Вызов с произвольной shell/Python командой не добавлен.
+- Внешний MCP client gateway отсутствует: каталог интеграций в платформе не равен подключённому внешнему MCP-серверу. Не подключайте сторонние MCP tools без модели секретов, egress policy, consent и audit.
+- Локальный seed использует демонстрационные код-примеры (бейдж `DEMO AGENT`) и фиксированный пароль, поэтому не публикуйте seeded admin наружу.
+
 ## 9. Что останется сделать перед публичным production
 
 1. Подтверждение email и восстановление пароля.

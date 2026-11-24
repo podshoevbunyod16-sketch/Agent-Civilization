@@ -26,11 +26,25 @@ import httpx
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from app.core.security import build_signing_payload  # noqa: E402
-from app.sandbox import SandboxRunner  # noqa: E402
+from app.core.security import build_signing_payload
+from app.sandbox import SandboxRunner
 
 ADMIN_EMAIL = "architect@agent-civilization.dev"
 ADMIN_PASSWORD = "Architect2026"
+DEMO_AGENT_SLUGS = frozenset(
+    {
+        "researcher-prime",
+        "polyglot-nexus",
+        "data-oracle",
+        "code-reviewer",
+        "task-planner",
+        "demo-ux-architect",
+        "demo-tkinter-builder",
+        "demo-tkinter-reviewer",
+        "demo-tkinter-test-designer",
+        "demo-tkinter-accessibility",
+    }
+)
 
 AGENTS = [
     {
@@ -43,7 +57,7 @@ AGENTS = [
             "на источники. Работает через HTTP-контракт и может быть поднят на любом узле."
         ),
         "category": "research",
-        "tags": ["search", "analysis", "facts"],
+        "tags": ["DEMO AGENT", "search", "analysis", "facts"],
         "accent": "#6ee7b7",
         "capabilities": [("research.web_search", 4), ("text.summarize", 3)],
         "code": (
@@ -67,7 +81,7 @@ AGENTS = [
             "неоднозначных терминов и оценку уверенности по каждому фрагменту."
         ),
         "category": "language",
-        "tags": ["translate", "localization"],
+        "tags": ["DEMO AGENT", "translate", "localization"],
         "accent": "#60a5fa",
         "capabilities": [("text.translate", 4), ("text.summarize", 2)],
         "code": (
@@ -91,7 +105,7 @@ AGENTS = [
             "по правилу 1.5·IQR и возвращает краткое пояснение для каждой аномалии."
         ),
         "category": "data",
-        "tags": ["analytics", "statistics"],
+        "tags": ["DEMO AGENT", "analytics", "statistics"],
         "accent": "#c084fc",
         "capabilities": [("data.analysis", 4), ("text.summarize", 3)],
         "code": (
@@ -124,7 +138,7 @@ AGENTS = [
             "отсутствие обработки исключений и слишком длинные функции."
         ),
         "category": "engineering",
-        "tags": ["code", "review", "security"],
+        "tags": ["DEMO AGENT", "code", "review", "security"],
         "accent": "#fbbf24",
         "capabilities": [("code.review", 4), ("security.audit", 2)],
         "code": (
@@ -158,7 +172,7 @@ AGENTS = [
             "нужны для каждой из них, и возвращает план, пригодный для Task Engine."
         ),
         "category": "orchestration",
-        "tags": ["planning", "decomposition"],
+        "tags": ["DEMO AGENT", "planning", "decomposition"],
         "accent": "#f472b6",
         "capabilities": [("task.decompose", 3), ("task.plan", 3)],
         "code": (
@@ -189,6 +203,120 @@ AGENTS = [
         "capabilities": [("integration.http", 2), ("negotiation.terms", 2)],
         "entrypoint": {"url": "https://httpbin.org/post"},
     },
+    {
+        "name": "DEMO · UX архитектор",
+        "slug": "demo-ux-architect",
+        "summary": "Преобразует запрос в конкретный план интерфейса и критерии готовности",
+        "description": "Детерминированный пример агента: структурирует prompt по шаблону, не вызывает LLM.",
+        "category": "demo-ui",
+        "tags": ["DEMO AGENT", "ux", "planning"],
+        "accent": "#38bdf8",
+        "capabilities": [("ui.spec", 4)],
+        "code": (
+            "def run(payload):\n"
+            "    source = payload.get('input', payload)\n"
+            "    prompt = source.get('prompt', '')\n"
+            "    return {'prompt': prompt, 'spec': {'layout': ['header', 'workspace', 'status bar'], "
+            "'theme': 'dark', 'acceptance': ['responsive', 'clear hierarchy', 'keyboard friendly']}}\n"
+        ),
+    },
+    {
+        "name": "DEMO · Tkinter builder",
+        "slug": "demo-tkinter-builder",
+        "summary": "Собирает исполняемый Python Tkinter skeleton из пользовательского запроса",
+        "description": "Генератор фиксированного шаблона для демо; это код, а не ответ языковой модели.",
+        "category": "demo-ui",
+        "tags": ["DEMO AGENT", "python", "tkinter", "builder"],
+        "accent": "#a78bfa",
+        "capabilities": [("ui.build", 5)],
+        "code": (
+            "import json\n\n"
+            "def run(payload):\n"
+            "    request = payload.get('input', {})\n"
+            "    prompt = str(request.get('prompt', 'Моё приложение'))[:70]\n"
+            "    spec = payload.get('depends_on_outputs', {}).get('design', {}).get('spec', {})\n"
+            "    title = json.dumps(prompt or 'Моё приложение', ensure_ascii=False)\n"
+            "    source = '\\n'.join([\n"
+            "        'import tkinter as tk',\n"
+            "        'from tkinter import ttk',\n"
+            "        '',\n"
+            "        'root = tk.Tk()',\n"
+            "        f'root.title({title})',\n"
+            "        'root.geometry(\\\"760x520\\\")',\n"
+            "        'root.minsize(520, 360)',\n"
+            "        'root.configure(bg=\\\"#0b1220\\\")',\n"
+            "        'style = ttk.Style(root)',\n"
+            "        'style.theme_use(\\\"clam\\\")',\n"
+            '        \'style.configure(\\"TFrame\\", background=\\"#0b1220\\")\',\n'
+            '        \'style.configure(\\"TLabel\\", background=\\"#0b1220\\", foreground=\\"#e6edf7\\", font=(\\"Arial\\", 12))\',\n'
+            "        'frame = ttk.Frame(root, padding=28)',\n"
+            "        'frame.pack(fill=\\\"both\\\", expand=True)',\n"
+            '        f\'ttk.Label(frame, text={title}, font=(\\"Arial\\", 22, \\"bold\\")).pack(anchor=\\"w\\")\',\n'
+            '        f\'ttk.Label(frame, text={json.dumps(str(spec.get("theme", "A simple workspace")), ensure_ascii=False)}).pack(anchor=\\"w\\", pady=(8, 20))\',\n'
+            "        'entry = ttk.Entry(frame)',\n"
+            "        'entry.pack(fill=\\\"x\\\", pady=8)',\n"
+            '        \'ttk.Button(frame, text=\\"Create\\", command=lambda: print(entry.get())).pack(anchor=\\"w\\", pady=8)\',\n'
+            "        'root.mainloop()',\n"
+            "    ])\n"
+            "    return {'filename': 'app.py', 'title': prompt or 'Моё приложение', 'source_code': source, 'components': ['header', 'text input', 'action button']}\n"
+        ),
+    },
+    {
+        "name": "DEMO · Tkinter code reviewer",
+        "slug": "demo-tkinter-reviewer",
+        "summary": "Проверяет сгенерированный интерфейсный код на базовые ошибки и опасные вызовы",
+        "description": "Правила статического анализа в демонстрационном агенте; не является полноценным аудитом.",
+        "category": "demo-ui",
+        "tags": ["DEMO AGENT", "review", "python"],
+        "accent": "#fbbf24",
+        "capabilities": [("ui.review", 4)],
+        "code": (
+            "def run(payload):\n"
+            "    outputs = payload.get('depends_on_outputs', {})\n"
+            "    source = outputs.get('build', {}).get('source_code', '')\n"
+            "    checks = {'tk_root': 'tk.Tk()' in source, 'event_loop': 'mainloop()' in source, "
+            "'no_eval': 'eval(' not in source, 'no_exec': 'exec(' not in source}\n"
+            "    return {'checks': checks, 'passed': all(checks.values()), "
+            "'summary': 'Шаблон прошёл базовые статические проверки' if all(checks.values()) else 'Найдены замечания'}\n"
+        ),
+    },
+    {
+        "name": "DEMO · Tkinter test designer",
+        "slug": "demo-tkinter-test-designer",
+        "summary": "Формирует проверяемый список сценариев для интерфейса из запроса и результата сборки",
+        "description": "Фиксированный шаблон тест-плана; тесты здесь не исполняются автоматически.",
+        "category": "demo-ui",
+        "tags": ["DEMO AGENT", "testing", "python"],
+        "accent": "#4ade80",
+        "capabilities": [("ui.test", 4)],
+        "code": (
+            "def run(payload):\n"
+            "    output = payload.get('depends_on_outputs', {}).get('build', {})\n"
+            "    components = output.get('components', [])\n"
+            "    return {'test_plan': ['Окно открывается без исключения', 'Поле принимает текст', "
+            "'Кнопка доступна с клавиатуры', 'Минимальный размер окна не ломает layout'], "
+            "'components_seen': components, 'execution': 'not_run'}\n"
+        ),
+    },
+    {
+        "name": "DEMO · Accessibility reviewer",
+        "slug": "demo-tkinter-accessibility",
+        "summary": "Проверяет шаблон на базовые признаки доступности и предлагает ручные проверки",
+        "description": "Эвристический checklist для демо; не заменяет проверку скринридером.",
+        "category": "demo-ui",
+        "tags": ["DEMO AGENT", "accessibility", "review"],
+        "accent": "#fb7185",
+        "capabilities": [("ui.accessibility", 4)],
+        "code": (
+            "def run(payload):\n"
+            "    output = payload.get('depends_on_outputs', {}).get('build', {})\n"
+            "    source = output.get('source_code', '')\n"
+            "    notes = ['Проверь контраст и порядок фокуса вручную']\n"
+            "    if 'ttk.Entry' in source: notes.append('Поле ввода доступно через Tab')\n"
+            "    if 'ttk.Button' in source: notes.append('Проверь клавиатурный запуск кнопки')\n"
+            "    return {'heuristic_review': notes, 'screen_reader_tested': False}\n"
+        ),
+    },
 ]
 
 
@@ -216,16 +344,13 @@ async def promote_to_admin(user_id: str) -> None:
     Роль намеренно не выдаётся публичным API (иначе это была бы эскалация
     привилегий). Сид-скрипт — часть локальной инфраструктуры, он пишет в БД.
     """
+    from app.core.config import settings
     from sqlalchemy import text
     from sqlalchemy.ext.asyncio import create_async_engine
 
-    from app.core.config import settings
-
     engine = create_async_engine(settings.database_url)
     async with engine.begin() as conn:
-        await conn.execute(
-            text("UPDATE users SET role = 'admin' WHERE id = :id"), {"id": user_id}
-        )
+        await conn.execute(text("UPDATE users SET role = 'admin' WHERE id = :id"), {"id": user_id})
     await engine.dispose()
 
 
@@ -275,13 +400,16 @@ async def main() -> int:
         # 3. Агенты + версии
         created = {}
         for spec in AGENTS:
+            agent_tags = set(spec["tags"])
+            if spec["slug"] in DEMO_AGENT_SLUGS:
+                agent_tags.add("DEMO AGENT")
             payload = {
                 "slug": spec["slug"],
                 "name": spec["name"],
                 "summary": spec["summary"],
                 "description": spec["description"],
                 "category": spec["category"],
-                "tags": spec["tags"],
+                "tags": sorted(agent_tags),
                 "accent_color": spec["accent"],
                 "capabilities": [
                     {"capability_key": key, "declared_level": level}
@@ -290,14 +418,21 @@ async def main() -> int:
             }
             agent_response = await http.post("/agents", json=payload)
             if agent_response.status_code == 409:
-                print(f"· агент {spec['slug']} уже существует, пропускаем")
+                existing_agent = await http.get(f"/agents/by-slug/{spec['slug']}")
+                if existing_agent.status_code == 200:
+                    created[spec["slug"]] = existing_agent.json()
+                    print(f"· агент {spec['slug']} уже существует, использую его")
+                else:
+                    print(f"· агент {spec['slug']} уже существует, пропускаем")
                 continue
             agent_response.raise_for_status()
             agent = agent_response.json()
 
             entrypoint_type = "http" if "entrypoint" in spec else "python"
             entrypoint_config = (
-                spec["entrypoint"] if "entrypoint" in spec else {"code": spec["code"], "runtime": "python3.12"}
+                spec["entrypoint"]
+                if "entrypoint" in spec
+                else {"code": spec["code"], "runtime": "python3.12"}
             )
             version_response = await http.post(
                 f"/agents/{agent['id']}/versions",
@@ -377,7 +512,13 @@ async def main() -> int:
         # 4. Задания и их реальное выполнение в песочнице
         scenarios = [
             ("researcher-prime", {"query": "Как устроена экономика агентов без криптовалюты?"}),
-            ("polyglot-nexus", {"text": "Цивилизация агентов растёт. Доверие строится на проверке.", "target_lang": "en"}),
+            (
+                "polyglot-nexus",
+                {
+                    "text": "Цивилизация агентов растёт. Доверие строится на проверке.",
+                    "target_lang": "en",
+                },
+            ),
             ("data-oracle", {"values": [12, 14, 13, 15, 16, 14, 99, 13, 12, 15]}),
             ("code-reviewer", {"code": "password = 'hunter2'\ndef f(x):\n    return eval(x)\n"}),
             ("task-planner", {"goal": "Подготовить отчёт о надёжности узлов"}),
@@ -436,9 +577,7 @@ async def main() -> int:
         economy_body = economy.json()
         accounts = await http.get("/economy/accounts")
         accounts.raise_for_status()
-        treasury = next(
-            (item for item in accounts.json() if item["type"] == "treasury"), None
-        )
+        treasury = next((item for item in accounts.json() if item["type"] == "treasury"), None)
         if treasury is None:
             print("! казна не найдена: экономика недоступна")
         elif economy_body["balance_units"] < 50:

@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.api.v1.endpoints.root_mcp import router as root_mcp_router
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.errors import register_exception_handlers
@@ -196,10 +197,14 @@ def create_app() -> FastAPI:
     # CORS: "*" + credentials — невалидная и опасная комбинация.
     # Без явного списка origins в production приложение не стартует;
     # в development разрешаем только localhost-дефолты.
-    origins = settings.cors_origins or ([] if settings.is_production else [
-        "http://localhost:5173",
-        "http://localhost:8000",
-    ])
+    origins = settings.cors_origins or (
+        []
+        if settings.is_production
+        else [
+            "http://localhost:5173",
+            "http://localhost:8000",
+        ]
+    )
     allow_credentials = True
     if "*" in origins:
         if settings.is_production:
@@ -227,6 +232,7 @@ def create_app() -> FastAPI:
 
     register_exception_handlers(app)
     app.include_router(api_router, prefix=settings.api_prefix)
+    app.include_router(root_mcp_router)
 
     @app.get("/metrics", include_in_schema=False, response_class=Response)
     async def root_metrics(

@@ -12,6 +12,40 @@
 
 ---
 
+## Демо за 2 минуты
+
+```bash
+./scripts/demo.sh
+```
+
+Команда поднимает PostgreSQL, применяет Alembic, запускает API, seed-данные, локальный node worker и Vite. Локальный seed-вход: `architect@agent-civilization.dev` / `Architect2026` (**только для локального демо; не публиковать**). Откройте http://localhost:5173, нажмите «Запустить задание», выберите сценарий и наблюдайте реальный DAG/статусы. API и worker используют `subprocess` fallback, поэтому сеть в subprocess-режиме не изолируется на уровне ядра.
+
+- UI: http://localhost:5173
+- Swagger: http://localhost:8000/docs
+- MCP: http://localhost:8000/mcp
+- Инструкции внешнего клиента/HTTPS: [docs/MCP_CONNECT.md](docs/MCP_CONNECT.md)
+- Текст питча на 3 минуты: [docs/PITCH.md](docs/PITCH.md)
+- Снимок UI (Playwright опционально): `python scripts/capture_demo.py --url http://localhost:5173`; снимок попадёт в `docs/media/`.
+
+### Честные числа демо
+
+`/mcp` публикует **33 tool definitions**: 25 существующих платформенных инструментов и 8 коротких alias-инструментов. Из последних 8 два (`run_in_sandbox`, `search_integrations`) пока возвращают явный not-enabled ответ. Реально подключённых внешних MCP-серверов: **0**; инструментов внешних серверов: **0**. Каталог интеграций платформы не считается работающим MCP-шлюзом.
+
+В seed-наборе ровно **10 DEMO AGENT** (пять базовых ролей и пять ролей UI/Tkinter). Это исполняемые детерминированные примеры, а не модели/агенты, автономно подключённые к LLM. `Swarm Rebuild` создаёт настоящий 5-шаговый план: UX-шаблон → Tkinter-шаблон → code review, test plan и accessibility checks. До четырёх ready-шагов могут запускаться параллельно согласно плану/worker; число активных курсоров вычисляется только из шагов со статусом `running`. Builder возвращает реальный исходный код Python из фиксированного шаблона; мини-превью в браузере — отображение результата JSON, а не запуск Tkinter в браузере.
+
+| Функция | Где в UI | Как проверить |
+|---|---|---|
+| Swarm Rebuild | Демо-арена → prompt canvas | Создаёт 5-шаговый DAG; source code, active count, cursors и статусы — из реальных worker/API результатов |
+| Реестр / возможности | Демо-арена → Узлы цивилизации | `GET /api/v1/agents`; значения приходят из опубликованных записей |
+| DAG-оркестрация | Выбор сценария → Запустить задание | `POST /api/v1/plans`, затем `POST /api/v1/plans/{id}/run`; состояние опрашивается из API |
+| Проверка результата | Задание / Trust | `POST /api/v1/tasks/{id}/verifications`; только завершённые реальные результаты |
+| ACU ledger | Демо-арена → Экономика | `GET /api/v1/economy/me`, `/transactions`, `POST /api/v1/economy/verify` |
+| MCP JSON-RPC | Вкладка «Подключить AI» → Проверить MCP | сырой `tools/list` request/response к `/mcp`; интеграционный smoke: `scripts/mcp_smoke_test.py` |
+| Sandbox | Узел/исполнение; ограничения в `docs/SECURITY.md` | Docker runner в configured environment; local script выбирает subprocess fallback (без network isolation) |
+| Внешние MCP integrations | Сейчас отсутствует | Не заявляется подключение внешних MCP servers; число равно 0 |
+
+---
+
 ## Что уже работает
 
 | Область | Возможности |
@@ -32,7 +66,7 @@
 ### Проверено фактически
 
 ```
-400 passed  (unit + API + security + integration + e2e worker + A2A-доставка + доверие + экономика + экосистема + эксплуатация + production-hardening)
+415 passed (including MCP endpoint, ten-agent swarm fixtures, and builder sandbox test; full run on 2026-11-24)
 ruff: All checks passed
 ```
 
