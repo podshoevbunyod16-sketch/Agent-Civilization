@@ -33,8 +33,10 @@ from typing import Any
 
 import httpx
 
+from app.core.config import settings
 from app.core.security import build_signing_payload
 from app.sandbox import SandboxRunner, SandboxUnavailableError
+from app.worker.tools.web_search import WebSearchUnavailable, web_search
 
 logger = logging.getLogger("worker")
 
@@ -190,14 +192,43 @@ class NodeWorker:
         limits = assignment.get("resource_limits") or {}
 
         if entrypoint_type == "python":
+            input_payload = dict(assignment.get("input_payload") or {})
+            tool_metrics: dict[str, Any] = {}
+            if assignment.get("agent_slug") == "researcher-prime":
+                if assignment.get("requester_id") != assignment.get("agent_owner_id"):
+                    return {
+                        "success": False,
+                        "error_message": (
+                            "DEMO web_search доступен только владельцу seed-агента "
+                            "(ограничение расходов поискового провайдера)."
+                        ),
+                        "metrics": {"tool": "web_search", "status": "forbidden"},
+                    }
+                task_id = str(assignment.get("task_id", ""))
+                lease = str(assignment.get("lease_token", ""))
+                await self.report_progress(task_id, lease, "tool_call: web_search")
+                try:
+                    results = await web_search(
+                        str(input_payload.get("query", "")), api_key=settings.tavily_api_key
+                    )
+                except WebSearchUnavailable as exc:
+                    return {
+                        "success": False,
+                        "error_message": str(exc),
+                        "metrics": {"tool": "web_search", "status": "failed"},
+                    }
+                input_payload["search_results"] = results
+                tool_metrics = {
+                    "tool": "web_search",
+                    "status": "succeeded",
+                    "result_count": len(results),
+                }
             runner = SandboxRunner.from_limits(limits)
             if self.sandbox_backend:
                 runner.backend = self.sandbox_backend
             started = time.monotonic()
             try:
-                result = await runner.run_python(
-                    str(config.get("code", "")), assignment.get("input_payload") or {}
-                )
+                result = await runner.run_python(str(config.get("code", "")), input_payload)
             except SandboxUnavailableError as exc:
                 return {
                     "success": False,
@@ -214,6 +245,7 @@ class NodeWorker:
                     "exit_code": result.exit_code,
                     "backend": result.backend,
                     "stdout": result.stdout[:2000],
+                    **tool_metrics,
                 },
             }
 

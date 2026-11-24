@@ -26,8 +26,10 @@ import httpx
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
+from app.core.config import settings
 from app.core.security import build_signing_payload
 from app.sandbox import SandboxRunner
+from app.worker.tools.web_search import WebSearchUnavailable, web_search
 
 ADMIN_EMAIL = "architect@agent-civilization.dev"
 ADMIN_PASSWORD = "Architect2026"
@@ -50,11 +52,10 @@ AGENTS = [
     {
         "name": "Агент-исследователь",
         "slug": "researcher-prime",
-        "summary": "Собирает и структурирует факты из открытых источников, отделяя проверенное от гипотез",
+        "summary": ("Ищет реальные источники через web_search и структурирует найденные фрагменты"),
         "description": (
-            "Исследовательский агент цивилизации. Принимает запрос, формирует план поиска, "
-            "собирает фрагменты данных и возвращает структурированную сводку со ссылками "
-            "на источники. Работает через HTTP-контракт и может быть поднят на любом узле."
+            "DEMO AGENT: принимает запрос, вызывает настоящий web_search на worker и "
+            "возвращает найденные provider snippets со ссылками. Не использует LLM."
         ),
         "category": "research",
         "tags": ["DEMO AGENT", "search", "analysis", "facts"],
@@ -68,7 +69,10 @@ AGENTS = [
             "        'query': query,\n"
             "        'keywords': keywords,\n"
             "        'plan': ['собрать источники', 'проверить факты', 'сформировать сводку'],\n"
-            "        'confidence': round(min(0.95, 0.5 + 0.05 * len(keywords)), 2),\n"
+            "        'sources': payload.get('search_results', []),\n"
+            "        'source_count': len(payload.get('search_results', [])),\n"
+            "        'search_status': 'completed' if payload.get('search_results') "
+            "else 'no_results',\n"
             "    }\n"
         ),
     },
@@ -529,6 +533,15 @@ async def main() -> int:
             agent = created.get(slug)
             if not agent:
                 continue
+            if slug == "researcher-prime":
+                try:
+                    results = await web_search(
+                        payload.get("query", ""), api_key=settings.tavily_api_key
+                    )
+                except WebSearchUnavailable as exc:
+                    print(f"· задание researcher-prime пропущено: {exc}")
+                    continue
+                payload = {**payload, "search_results": results}
             submit = await http.post(
                 "/tasks",
                 json={

@@ -87,6 +87,9 @@ class Settings(BaseSettings):
     worker_poll_interval_seconds: float = 2.0
     worker_lease_seconds: int = 60
     artifact_storage_dir: str = "./var/artifacts"
+    # Only the trusted node worker receives this credential; it is never passed
+    # to the untrusted Python-agent sandbox or exposed by the API.
+    tavily_api_key: str = ""
 
     # ── Внутренние сервисы ────────────────────────────────────────────
     # Сервисный токен для внутреннего API доставки сообщений (message worker).

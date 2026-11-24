@@ -113,6 +113,9 @@ class TaskClaimRequest(BaseModel):
 class TaskAssignment(BaseModel):
     task_id: uuid.UUID
     agent_id: uuid.UUID
+    agent_slug: str
+    agent_owner_id: uuid.UUID
+    requester_id: uuid.UUID
     agent_version_id: uuid.UUID | None
     entrypoint_type: str
     entrypoint_config: dict[str, Any]

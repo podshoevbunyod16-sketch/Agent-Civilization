@@ -3,17 +3,22 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import time
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, Header, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import FileResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.staticfiles import StaticFiles
 
 from app.api.v1.endpoints.root_mcp import router as root_mcp_router
 from app.api.v1.router import api_router
@@ -54,6 +59,22 @@ _UUID_RE = re.compile(
 )
 _LONG_ID_RE = re.compile(r"\b[0-9a-fA-F]{16,}\b")
 _NUMBER_RE = re.compile(r"(?<=/)\d+(?=/|$)")
+
+
+class SPAStaticFiles(StaticFiles):
+    """Serve React client routes from index.html without masking API 404s."""
+
+    async def get_response(self, path: str, scope):
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code != 404 or path.startswith(
+                ("api/", "mcp", "docs", "redoc", "openapi.json", "metrics")
+            ):
+                raise
+            if Path(path).suffix:
+                raise
+            return await super().get_response("index.html", scope)
 
 
 def _route_template(request: Request) -> str:
@@ -249,8 +270,17 @@ def create_app() -> FastAPI:
             del request
             return await render_metrics(session, authorization, x_service_token)
 
-    @app.get("/", tags=["root"], summary="Информация о сервисе")
-    async def root() -> dict:
+    frontend_dir = Path(
+        os.environ.get(
+            "FRONTEND_DIST_DIR", str(Path(__file__).resolve().parents[2] / "frontend_dist")
+        )
+    )
+
+    @app.get("/", tags=["root"], summary="Демо-приложение или информация о сервисе")
+    async def root():
+        index_file = frontend_dir / "index.html"
+        if index_file.is_file():
+            return FileResponse(index_file)
         return {
             "name": settings.project_name,
             "version": settings.version,
@@ -259,6 +289,9 @@ def create_app() -> FastAPI:
             "docs": "/docs",
             "health": f"{settings.api_prefix}/health",
         }
+
+    if (frontend_dir / "index.html").is_file():
+        app.mount("/", SPAStaticFiles(directory=str(frontend_dir), html=True), name="frontend")
 
     return app
 
