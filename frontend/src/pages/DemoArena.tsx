@@ -9,21 +9,21 @@ type Scenario = {
   title: string
   summary: string
   capability: string
-  steps: (agent: AgentListItem) => Array<Record<string, unknown>>
+  steps: () => Array<Record<string, unknown>>
 }
 
 const scenarios: Scenario[] = [
   {
-    id: 'research', title: 'Собрать исследовательский бриф', summary: 'Реестр → подбор агента → DAG-план → выполнение в sandbox → проверка результата.', capability: 'research.web_search',
-    steps: (agent) => [{ key: 'research', name: 'Собрать и структурировать факты', required_capabilities: ['research.web_search'], agent_id: agent.id, input_payload: { query: 'Как устроена экономика автономных агентов?' } }, { key: 'review', name: 'Подготовить итоговый бриф', required_capabilities: ['text.summarize'], depends_on: ['research'], agent_id: agent.id, input_payload: { query: 'Проверь полноту и сформируй короткий бриф' } }],
+    id: 'research', title: 'Собрать исследовательский бриф', summary: 'Реестр → подбор агента по capability → DAG-план → worker execution → результат из API.', capability: 'research.web_search',
+    steps: () => [{ key: 'research', name: 'Собрать и структурировать факты', required_capabilities: ['research.web_search'], input_payload: { query: 'Как устроена экономика автономных агентов?' } }, { key: 'review', name: 'Подготовить итоговый бриф', required_capabilities: ['text.summarize'], depends_on: ['research'], input_payload: { query: 'Проверь полноту и сформируй короткий бриф' } }],
   },
   {
     id: 'security', title: 'Проверить код на рискованные паттерны', summary: 'Два зависимых шага с подбором исполнителя по опубликованной capability.', capability: 'code.review',
-    steps: (agent) => [{ key: 'scan', name: 'Просканировать фрагмент кода', required_capabilities: ['code.review'], agent_id: agent.id, input_payload: { code: "password = 'demo-secret'\\ndef run(x):\\n    return eval(x)\\n" } }, { key: 'report', name: 'Сформировать отчёт проверки', required_capabilities: ['security.audit'], depends_on: ['scan'], agent_id: agent.id, input_payload: { code: 'Review findings from the previous step' } }],
+    steps: () => [{ key: 'scan', name: 'Просканировать фрагмент кода', required_capabilities: ['code.review'], input_payload: { code: "password = 'demo-secret'\\ndef run(x):\\n    return eval(x)\\n" } }, { key: 'report', name: 'Сформировать отчёт проверки', required_capabilities: ['security.audit'], depends_on: ['scan'], input_payload: { code: 'Review findings from the previous step' } }],
   },
   {
     id: 'data', title: 'Посчитать таблицу и проверить результат', summary: 'Задание проходит по настоящему DAG-оркестратору; данные и статусы читаются из API.', capability: 'data.analysis',
-    steps: (agent) => [{ key: 'analyze', name: 'Рассчитать статистики', required_capabilities: ['data.analysis'], agent_id: agent.id, input_payload: { values: [12, 14, 13, 15, 16, 14, 99, 13, 12, 15] } }, { key: 'verify', name: 'Проверить итоговые метрики', required_capabilities: ['text.summarize'], depends_on: ['analyze'], agent_id: agent.id, input_payload: { instruction: 'Проверь вычисления предыдущего шага' } }],
+    steps: () => [{ key: 'analyze', name: 'Рассчитать статистики', required_capabilities: ['data.analysis'], input_payload: { values: [12, 14, 13, 15, 16, 14, 99, 13, 12, 15] } }, { key: 'verify', name: 'Проверить итоговые метрики', required_capabilities: ['text.summarize'], depends_on: ['analyze'], input_payload: { instruction: 'Проверь вычисления предыдущего шага' } }],
   },
 ]
 
@@ -78,7 +78,7 @@ export default function DemoArena() {
     if (!agent) { setError(`Нет опубликованного агента с возможностью ${selectedScenario.capability}. Запустите seed_demo.py или опубликуйте агента.`); return }
     setBusy(true); setError(''); setTask(null)
     try {
-      const created = await api.createPlan({ title: selectedScenario.title, goal: { scenario: selectedScenario.id, capability: selectedScenario.capability }, steps: selectedScenario.steps(agent), auto_start: false, max_parallelism: 1 })
+      const created = await api.createPlan({ title: selectedScenario.title, goal: { scenario: selectedScenario.id, capability: selectedScenario.capability }, steps: selectedScenario.steps(), auto_start: false, max_parallelism: 1 })
       const started = await api.runPlan(created.id)
       const current = await api.plan(created.id)
       setPlan(current)
@@ -121,7 +121,7 @@ export default function DemoArena() {
   "mcpServers": {
     "agent-civilization": {
       "command": "npx",
-      "args": ["-y", "mcp-remote", "https://YOUR-DEMO-URL/mcp", "--header", "Authorization:${AUTH_HEADER}"],
+      "args": ["-y", "mcp-remote", "https://YOUR-DEMO-URL/mcp", "--header", "Authorization:\${AUTH_HEADER}"],
       "env": { "AUTH_HEADER": "Bearer YOUR_API_KEY" }
     }
   }
