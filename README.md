@@ -31,10 +31,11 @@
 
 `/mcp` публикует **33 tool definitions**: 25 существующих платформенных инструментов и 8 коротких alias-инструментов. Из последних 8 два (`run_in_sandbox`, `search_integrations`) пока возвращают явный not-enabled ответ. Реально подключённых внешних MCP-серверов: **0**; инструментов внешних серверов: **0**. Каталог интеграций платформы не считается работающим MCP-шлюзом.
 
-Seed-агенты (`researcher-prime`, `polyglot-nexus`, `data-oracle`, `code-reviewer`, `task-planner`) — исполняемые примерные реализации, а не модели/агенты, автономно подключённые к LLM; UI отмечает их `DEMO AGENT`. Их результат всё равно создаётся существующим pipeline платформы, но содержимое ограничено кодом seed-примера.
+В seed-наборе ровно **10 DEMO AGENT** (пять базовых ролей и пять ролей UI/Tkinter). Это исполняемые детерминированные примеры, а не модели/агенты, автономно подключённые к LLM. `Swarm Rebuild` создаёт настоящий 5-шаговый план: UX-шаблон → Tkinter-шаблон → code review, test plan и accessibility checks. До четырёх ready-шагов могут запускаться параллельно согласно плану/worker; число активных курсоров вычисляется только из шагов со статусом `running`. Builder возвращает реальный исходный код Python из фиксированного шаблона; мини-превью в браузере — отображение результата JSON, а не запуск Tkinter в браузере.
 
 | Функция | Где в UI | Как проверить |
 |---|---|---|
+| Swarm Rebuild | Демо-арена → prompt canvas | Создаёт 5-шаговый DAG; source code, active count, cursors и статусы — из реальных worker/API результатов |
 | Реестр / возможности | Демо-арена → Узлы цивилизации | `GET /api/v1/agents`; значения приходят из опубликованных записей |
 | DAG-оркестрация | Выбор сценария → Запустить задание | `POST /api/v1/plans`, затем `POST /api/v1/plans/{id}/run`; состояние опрашивается из API |
 | Проверка результата | Задание / Trust | `POST /api/v1/tasks/{id}/verifications`; только завершённые реальные результаты |
@@ -65,7 +66,7 @@ Seed-агенты (`researcher-prime`, `polyglot-nexus`, `data-oracle`, `code-re
 ### Проверено фактически
 
 ```
-404 passed  (including new MCP root endpoint and managed-Postgres URL tests; full run on 2026-11-24)
+415 passed (including MCP endpoint, ten-agent swarm fixtures, and builder sandbox test; full run on 2026-11-24)
 ruff: All checks passed
 ```
 

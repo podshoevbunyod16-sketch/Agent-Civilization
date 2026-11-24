@@ -5,7 +5,7 @@
 > user tools, resources), live Demo Arena UI, реальный plan launch, demo runner
 > script и MCP connection/deployment docs. Базовая проверка до изменений:
 > Baseline: **400 passed** и Ruff clean (pytest потребовал установить dev deps + `pgserver`).
-> После изменений полный suite: **404 passed**; `ruff check app tests scripts` clean,
+> После Swarm Rebuild полный suite: **415 passed**; `ruff check app tests` clean,
 > frontend typecheck/build clean, 12 Vitest tests passed.
 >
 > **Что реально работает:** `/mcp` JSON-RPC `initialize`, `tools/list`,
@@ -15,8 +15,11 @@
 > sandbox без Docker через `pgserver` fallback: миграции, API, seed, worker и UI
 > запустились; `scripts/mcp_smoke_test.py` создал задачу через реальный API key.
 >
-> **Demo-only:** seed agents — deterministic executable examples, UI маркирует
-> пять известных seeded slugs как `DEMO AGENT`; локальный пароль фиксированный.
+> **Demo-only:** seed agents — 10 deterministic executable examples, UI маркирует
+> их `DEMO AGENT`; Swarm Rebuild запускает пятишаговый prompt→Tkinter→review
+> DAG. Builder генерирует код из фиксированного шаблона, не из LLM; браузерный
+> canvas показывает структурную JSON-preview, а не исполняет Tkinter. Локальный
+> пароль фиксированный.
 > Они не являются LLM и не вызывают внешние инструменты.
 >
 > **Не сделано / не подтверждено:** 2 из 33 MCP tool definitions (`run_in_sandbox`,

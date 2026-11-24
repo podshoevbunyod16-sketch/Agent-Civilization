@@ -90,7 +90,7 @@ if [[ -f "$ROOT/var/seed-node-credentials.json" ]] && { [[ ! -f "$ROOT/var/demo-
   info "Запускаю реальный node worker (subprocess sandbox fallback)"
   NODE_KEY="$("$PYTHON" -c 'import json,sys; print(json.load(open(sys.argv[1]))["node_key"])' "$ROOT/var/seed-node-credentials.json")"
   NODE_SECRET="$("$PYTHON" -c 'import json,sys; print(json.load(open(sys.argv[1]))["node_secret"])' "$ROOT/var/seed-node-credentials.json")"
-  (cd "$ROOT/backend" && AC_API_URL="$API_URL" AC_NODE_KEY="$NODE_KEY" AC_NODE_SECRET="$NODE_SECRET" exec "$PYTHON" -m app.worker.node_worker --poll-interval 1 --max-tasks 2) >"$ROOT/var/demo-worker.log" 2>&1 </dev/null &
+  (cd "$ROOT/backend" && AC_API_URL="$API_URL" AC_NODE_KEY="$NODE_KEY" AC_NODE_SECRET="$NODE_SECRET" exec "$PYTHON" -m app.worker.node_worker --poll-interval 0.7 --max-tasks 4) >"$ROOT/var/demo-worker.log" 2>&1 </dev/null &
   echo $! >"$ROOT/var/demo-worker.pid"
 fi
 
