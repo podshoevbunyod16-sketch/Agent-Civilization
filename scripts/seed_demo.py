@@ -26,8 +26,8 @@ import httpx
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from app.core.security import build_signing_payload  # noqa: E402
-from app.sandbox import SandboxRunner  # noqa: E402
+from app.core.security import build_signing_payload
+from app.sandbox import SandboxRunner
 
 ADMIN_EMAIL = "architect@agent-civilization.dev"
 ADMIN_PASSWORD = "Architect2026"
@@ -216,10 +216,9 @@ async def promote_to_admin(user_id: str) -> None:
     Роль намеренно не выдаётся публичным API (иначе это была бы эскалация
     привилегий). Сид-скрипт — часть локальной инфраструктуры, он пишет в БД.
     """
+    from app.core.config import settings
     from sqlalchemy import text
     from sqlalchemy.ext.asyncio import create_async_engine
-
-    from app.core.config import settings
 
     engine = create_async_engine(settings.database_url)
     async with engine.begin() as conn:

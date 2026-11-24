@@ -1,6 +1,37 @@
 # Статус реализации роадмапа
 
-> **Обновление 2026-11-13 (ветка `arena/bf2d4a36-agent-civilization`).**
+> **Актуально на 2026-11-24, ветка демо-арены.** В этой итерации добавлены
+> корневой MCP endpoint `/mcp` (anonymous initialize/discovery, authenticated
+> user tools, resources), live Demo Arena UI, реальный plan launch, demo runner
+> script и MCP connection/deployment docs. Базовая проверка до изменений:
+> Baseline: **400 passed** и Ruff clean (pytest потребовал установить dev deps + `pgserver`).
+> После изменений полный suite: **404 passed**; `ruff check app tests scripts` clean,
+> frontend typecheck/build clean, 12 Vitest tests passed.
+>
+> **Что реально работает:** `/mcp` JSON-RPC `initialize`, `tools/list`,
+> `tools/call`, `resources/list/read`; тесты проверяют anonymous discovery и
+> authenticated balance. Демо-арена использует реальные `/agents`, `/platform/stats`,
+> `/plans`, `/tasks`, `/economy/*` API. `scripts/demo.sh` проверен в этом Linux
+> sandbox без Docker через `pgserver` fallback: миграции, API, seed, worker и UI
+> запустились; `scripts/mcp_smoke_test.py` создал задачу через реальный API key.
+>
+> **Demo-only:** seed agents — deterministic executable examples, UI маркирует
+> пять известных seeded slugs как `DEMO AGENT`; локальный пароль фиксированный.
+> Они не являются LLM и не вызывают внешние инструменты.
+>
+> **Не сделано / не подтверждено:** 2 из 33 MCP tool definitions (`run_in_sandbox`,
+> `search_integrations`) отвечают явной ошибкой not-enabled; внешних MCP-серверов
+> подключено **0** (внешних инструментов **0**); API keys не имеют read-only/write
+> scopes; stdio gateway, безопасный shell allowlist, внешнее deployment и
+> Playwright capture не прогнаны. Subprocess fallback не гарантирует сетевую
+> изоляцию. `render.yaml` — blueprint-заготовка API без SPA/worker, production
+> Docker runner требует Docker daemon. Смотрите `docs/MCP_CONNECT.md` и
+> `docs/SECURITY.md`.
+>
+> Следующие абзацы — исторический статус ветки 2026-11-13, не отчет о сегодняшней
+> демо-итерации.
+>
+> **Историческое обновление 2026-11-13 (ветка `arena/bf2d4a36-agent-civilization`).**
 > Production-hardening проход, выполнено и проверено:
 >
 > * **Деньги — точный `Numeric(18, 4)`** (миграция `b7c3d91e5a02`); журнал
